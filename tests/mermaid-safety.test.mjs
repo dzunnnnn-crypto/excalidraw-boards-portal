@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {createRequire} from 'node:module';
 const engine=process.env.BOARDS_TEST_ENGINE || path.resolve(import.meta.dirname,'../.vendor/upstream');
 const {safeMermaidInput}=await import(pathToFileURL(path.join(engine,'frontend/src/utils/mermaidSafety.ts')));
+const require=createRequire(path.join(engine,'package.json'));
 
 test('Mermaid keeps supported presentation and enforces security limits',()=>{
  const c=safeMermaidInput('flowchart LR; A-->B',{flowchart:{curve:'basis'},themeVariables:{fontSize:'24px'},maxEdges:100});
@@ -14,4 +16,9 @@ test('Mermaid rejects caller supplied security, CSS and oversized inputs before 
  for(const c of [{securityLevel:'loose'},{themeCSS:'body{display:none}'},{themeVariables:{fontSize:'20px',fontFamily:'x'}},{maxEdges:501},{maxEdges:-1},{maxTextSize:Infinity},JSON.parse('{"__proto__":{"securityLevel":"loose"}}')]) assert.throws(()=>safeMermaidInput('graph LR; A-->B',c));
  assert.throws(()=>safeMermaidInput('a'.repeat(50001)));
  assert.throws(()=>safeMermaidInput('graph LR; A-->B',{maxTextSize:2}));
+});
+test('updated KaTeX renders math and keeps untrusted links disabled',()=>{
+ const katex=require('katex');
+ assert.match(katex.renderToString('x^2',{trust:false}),/msup/);
+ assert(!katex.renderToString('\\href{javascript:alert(1)}{x}',{trust:false,throwOnError:false}).includes('href="javascript:'));
 });

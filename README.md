@@ -25,7 +25,12 @@ npm start
 .local/demo-credentials.json. Инициализация повторно не перезаписывает данные.
 Порт 8805 и локальный режим задаются в config.local.json.
 
-Проверки: npm test, npm run test:upstream, npm run check:public.
+Проверки: npm test, npm run test:upstream, npm run check:public,
+npm run check:dependencies. Полный аудит выполняется до удаления
+devDependencies, поскольку часть библиотек входит в браузерную сборку.
+Браузерная проверка: node tests/browser-security.mjs. На Windows используется
+установленный Edge, на Linux нужен Chromium Playwright. BROWSER_CHANNEL
+позволяет явно выбрать канал. Сценарий создаёт отдельные вымышленные данные.
 
 ## Что можно посмотреть
 
@@ -53,7 +58,7 @@ npm start
 - [Конфигурация и резервирование](docs/operations.md)
 - [Релизы и будущий переход VPS](docs/release-and-upgrade.md)
 - [Фактические проверки](docs/verification.md)
-- [Открытые вопросы зависимостей до публикации](docs/security-status.md)
+- [Зависимости и границы проверки безопасности](docs/security-status.md)
 
 Лицензия дополнений MIT. Авторство и лицензии исходных проектов сохраняются
 в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
