@@ -1,0 +1,37 @@
+[
+  {
+    "file": "RADIX-MIT.txt",
+    "source": "https://raw.githubusercontent.com/radix-ui/primitives/main/LICENSE",
+    "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138",
+    "inputSha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138",
+    "normalization": "LF line endings; trailing whitespace removed; license wording retained"
+  },
+  {
+    "file": "SAXES-LICENSE.txt",
+    "source": "https://raw.githubusercontent.com/lddubeau/saxes/v6.0.0/LICENSE",
+    "sha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e",
+    "inputSha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e",
+    "normalization": "LF line endings; trailing whitespace removed; license wording retained"
+  },
+  {
+    "file": "REACT-REMOVE-SCROLL-BAR-MIT.txt",
+    "source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/master/LICENSE",
+    "sha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84",
+    "inputSha256": "a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84",
+    "normalization": "LF line endings; trailing whitespace removed; license wording retained"
+  },
+  {
+    "file": "ASSISTANT-OFL.txt",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/assistant/OFL.txt",
+    "sha256": "628a624ceabe269a93b1f13086ada08064b8caa3fb08d6c21e13f69d0cdbf983",
+    "inputSha256": "7eaf6282cfab122b99ffd62a122fc27b6c3c8f2c65b56ff9b3a25badbc64887d",
+    "normalization": "LF line endings; trailing whitespace removed; license wording retained"
+  },
+  {
+    "file": "MCP-EXCALIDRAW-MIT.txt",
+    "source": "https://raw.githubusercontent.com/yctimlin/mcp_excalidraw/8084a1c8b410d625fcfd59d5cffb32f3a86a2a6f/LICENSE",
+    "sha256": "6c8491d53896ceae3c7da57dc903ec2a41fd2a826d547ac42201c0c097b05197",
+    "inputSha256": "df3e29d299ae422383974946f4bfb49243971ca087e270d67326869c9a1191a7",
+    "normalization": "LF line endings; trailing whitespace removed; license wording retained"
+  }
+]

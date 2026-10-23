@@ -1,5 +1,6 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import crypto from 'node:crypto';import {execFileSync} from 'node:child_process';import {pathToFileURL} from 'node:url';import {prepareSource,npmRun} from './setup-upstream.mjs';
 import {auditDependencies} from './check-dependencies.mjs';
+import {collectLicenses,verifyLicenses} from './collect-licenses.mjs';
 const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 export function verifyArchive(archive,manifest){if(sha(archive)!==manifest.artifactSha256)throw new Error('Artifact checksum mismatch');return true;}
 export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir}={}){
@@ -16,12 +17,12 @@ export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir
  // Never trust ignored build output left in the developer checkout.
  const freshEngine=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'boards-engine-build-')),'upstream');
  prepareSource({...lock,patches:lock.patches.map(p=>({...p,file:path.join(root,p.file)})),target:freshEngine});
- npmRun(['ci'],freshEngine);auditDependencies(freshEngine);npmRun(['run','build'],freshEngine);npmRun(['prune','--omit=dev'],freshEngine);
+ npmRun(['ci'],freshEngine);auditDependencies(freshEngine);npmRun(['run','build'],freshEngine);
+ collectLicenses({engine:freshEngine,stage,root});
+ npmRun(['prune','--omit=dev'],freshEngine);
  const runtimeEngine=path.join(stage,'.vendor/upstream');fs.mkdirSync(runtimeEngine,{recursive:true});
  for(const name of ['dist','assets','node_modules','package.json','package-lock.json','LICENSE']){const source=path.join(freshEngine,name);if(fs.existsSync(source))fs.cpSync(source,path.join(runtimeEngine,name),{recursive:true});}
- const licenses=[];
- function inventory(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(e.name==='.bin'||e.isSymbolicLink())continue;const p=path.join(dir,e.name);if(e.isDirectory()){const meta=path.join(p,'package.json');if(fs.existsSync(meta)){const v=JSON.parse(fs.readFileSync(meta));licenses.push({name:v.name,version:v.version,license:v.license||'See package license files'});const nested=path.join(p,'node_modules');if(fs.existsSync(nested))inventory(nested);}else if(e.name.startsWith('@'))inventory(p);}}}
- inventory(path.join(runtimeEngine,'node_modules'));fs.writeFileSync(path.join(stage,'THIRD_PARTY_INVENTORY.json'),JSON.stringify(licenses,null,2)+'\n');
+ console.log('Verified license entries:',verifyLicenses(stage));
  const meta={sourceCommit:commit,upstreamCommit:lock.commit,patches:lock.patches,nodeMajor:24,platform:process.platform,arch:process.arch,libc:'glibc',stateSchema:2};
  fs.writeFileSync(path.join(stage,'release.json'),JSON.stringify(meta,null,2)+'\n');
  const output=path.resolve(outDir||path.join(root,'release',commit.slice(0,12)));fs.mkdirSync(output,{recursive:true});
