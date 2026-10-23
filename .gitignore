@@ -1,0 +1,8 @@
+.vendor/
+.local/
+.superpowers/
+node_modules/
+config.local.json
+*.log
+release/
+coverage/

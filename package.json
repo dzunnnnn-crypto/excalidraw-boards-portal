@@ -1,0 +1,16 @@
+{
+  "name":"excalidraw-boards-portal","version":"0.1.0","private":true,"type":"module",
+  "description":"Personal and shared Excalidraw boards with access control and an MCP gateway",
+  "engines":{"node":">=24 <25"},
+  "scripts":{
+    "setup":"node scripts/setup-upstream.mjs",
+    "demo:init":"node scripts/init-demo.mjs",
+    "start":"node scripts/start.mjs",
+    "test":"node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:upstream":"npm --prefix .vendor/upstream test",
+    "check:public":"node scripts/check-public.mjs",
+    "backup":"node scripts/backup.mjs",
+    "release":"node scripts/release.mjs"
+  },
+  "license":"MIT"
+}
