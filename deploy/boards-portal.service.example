@@ -1,0 +1,24 @@
+[Unit]
+Description=Excalidraw boards portal
+After=network.target
+
+[Service]
+Type=simple
+User=boards-portal
+Group=boards-portal
+WorkingDirectory=/srv/boards-portal/current
+Environment=PORTAL_CONFIG=/etc/boards-portal/config.json
+ExecStart=/usr/bin/node /srv/boards-portal/current/scripts/start.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/boards-portal
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
