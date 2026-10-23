@@ -1,3 +1,5 @@
+import {lockStore} from './store-lock.mjs';
+import {loadConfig} from './config.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,20 +11,15 @@ import { Workers } from './workers.mjs';
 import { RemoteMcp } from './mcp.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
-const appRoot=process.env.EXCALIDRAW_APP_ROOT||path.resolve(here,'../upstream');
+const config=loadConfig();
+const {appRoot,authStateFile:stateFile,origin,port,cookieName,secureCookies}=config;
 const require=createRequire(path.join(appRoot,'package.json'));
 const express=require('express');const {WebSocket,WebSocketServer}=require('ws');
-const stateFile=process.env.AUTH_STATE_FILE||'/var/lib/excalidraw/portal/auth.json';
-const origin=process.env.PUBLIC_ORIGIN||'https://board.marfino76.ru';
-const port=Number(process.env.PORT||3002),cookieName='__Host-board_session',day=86400000;
-if(process.argv.includes('--init')){
-  let input='';for await(const chunk of process.stdin)input+=chunk;const credentials=JSON.parse(input);
-  if(fs.existsSync(stateFile))throw new Error('Authentication state already exists');
-  atomicJson(stateFile,{version:1,owner:{username:credentials.username,...passwordHash(credentials.password)},sessions:{},invitations:{}});process.exit(0);
-}
-const initial=JSON.parse(fs.readFileSync(process.env.BOARDS_CONFIG||path.join(here,'../boards.json'),'utf8'));
+const day=86400000;
+const releaseStore=lockStore(stateFile);process.on('exit',releaseStore);
+const initial=JSON.parse(fs.readFileSync(config.boardsConfig,'utf8'));
 const access=new Access(stateFile,initial),state=access.state;
-const workers=new Workers(appRoot,process.env.PERSONAL_DATA_ROOT||'/var/lib/excalidraw/personal');
+const workers=new Workers(appRoot,config.personalDataRoot,{maxWorkers:config.maxWorkers,idleMs:config.idleMs});
 const mcp=new RemoteMcp({appRoot,access,workers,port});mcp.origin=origin;
 const sockets=new Set(),attempts=new Map();
 const app=express();app.disable('x-powered-by');
@@ -34,7 +31,7 @@ function sessionOf(req){
 function addSession(res,session,remember=true){
   const raw=secret();for(const [id,old]of Object.entries(state.sessions))if(!access.valid(old))delete state.sessions[id];
   state.sessions[digest(raw)]=session;access.save();
-  res.setHeader('Set-Cookie',`${cookieName}=${raw}; Path=/; HttpOnly; Secure; SameSite=Lax${remember?`; Max-Age=${Math.max(0,Math.floor((session.expires-Date.now())/1000))}`:''}`);
+  res.setHeader('Set-Cookie',`${cookieName}=${raw}; Path=/; HttpOnly${secureCookies?'; Secure':''}; SameSite=Lax${remember?`; Max-Age=${Math.max(0,Math.floor((session.expires-Date.now())/1000))}`:''}`);
 }
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 function member(req,res,next){if(!req.session?.user)throw fail(req.session?403:401,'Нужен вход в личную учётную запись');next();}
@@ -75,7 +72,7 @@ app.post('/api/logout',(req,res)=>{
   const raw=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1);
   if(raw){delete state.sessions[digest(raw)];access.save();}
   for(const c of sockets)if(c.session===req.session)c.client.close(1008,'Logged out');
-  res.setHeader('Set-Cookie',`${cookieName}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);res.json({ok:true});
+  res.setHeader('Set-Cookie',`${cookieName}=; Path=/; HttpOnly${secureCookies?'; Secure':''}; SameSite=Lax; Max-Age=0`);res.json({ok:true});
 });
 app.get('/api/boards',member,(req,res)=>res.json(access.list(req.session)));
 app.post('/api/boards',member,body,(req,res)=>res.status(201).json(access.create(req.session,req.body||{})));
@@ -169,5 +166,8 @@ server.on('upgrade',async(req,socket,head)=>{
   }catch{socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');}
 });
 setInterval(()=>{for(const c of sockets)if(!access.permission(c.session,c.board))c.client.close(1008,'Access expired');for(const [ip,a]of attempts)if(a.until<=Date.now())attempts.delete(ip);},30000).unref();
-server.listen(port,'127.0.0.1',()=>console.log('Private boards portal v2 ready'));
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{for(const c of sockets){c.client.close();c.upstream.terminate();}await workers.close();server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),3000).unref();});
+server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'Portal port is already in use; no other process was stopped.':error.message);process.exit(1);});
+server.listen(port,config.host,()=>console.log('Private boards portal v2 ready'));
+const shutdown=async()=>{for(const c of sockets){c.client.close();c.upstream.terminate();}await workers.close();server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),3000).unref();};
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,shutdown);
+process.on('message',m=>{if(m?.type==='portal:shutdown')void shutdown();});

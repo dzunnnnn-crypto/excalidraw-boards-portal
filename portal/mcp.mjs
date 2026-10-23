@@ -25,7 +25,7 @@ export class RemoteMcp {
   }
   board(value){
     let id=value;
-    if(typeof value==='string'&&value.startsWith('https://')){try{const url=new URL(value);if(url.origin!==this.origin)throw 0;id=/^\/b\/([a-z0-9-]+)\/?$/.exec(url.pathname)?.[1];}catch{throw fail(400,'Некорректная ссылка на доску');}}
+    if(typeof value==='string'&&/^https?:\/\//.test(value)){try{const url=new URL(value);if(url.origin!==this.origin)throw 0;id=/^\/b\/([a-z0-9-]+)\/?$/.exec(url.pathname)?.[1];}catch{throw fail(400,'Некорректная ссылка на доску');}}
     if(typeof id!=='string'||!/^[a-z0-9-]{1,80}$/.test(id))throw fail(400,'Укажите ID или ссылку нужной доски');
     return this.access.board(id);
   }

@@ -15,12 +15,6 @@ export function passwordHash(password) { const salt=crypto.randomBytes(16).toStr
 export class Access {
   constructor(file, boards) {
     this.file=file;this.state=JSON.parse(fs.readFileSync(file,'utf8'));
-    if(this.state.version===1) {
-      const old=this.state;
-      this.state={version:2,users:{dmitry:{id:'dmitry',name:'Дмитрий',...old.owner,active:true}},boards:Object.fromEntries(boards.map(board=>[board.id,{...board,owner:'dmitry',grants:{},created:Date.now()}])),sessions:old.sessions,invitations:old.invitations,tokens:{},activations:{}};
-      for(const session of Object.values(this.state.sessions))if(session.role==='owner'){session.user='dmitry';delete session.role;}
-      this.save();
-    }
     if(this.state.version!==2)throw new Error('Unsupported access state');
   }
   save(){atomicJson(this.file,this.state);}
