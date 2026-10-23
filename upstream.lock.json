@@ -17,6 +17,10 @@
     {
       "file": "patches/004-runtime-dependencies.patch",
       "sha256": "13980ab942fc917173324454acb72c3a4dc38a95afb8be2249bfc4e94ab6536a"
+    },
+    {
+      "file": "patches/005-frontend-dependencies.patch",
+      "sha256": "fe1a097212cb8e6f2958b06c486d9be7f8a76f2f8920e2aa64b4cad62fc999a4"
     }
   ]
 }

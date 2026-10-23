@@ -1,4 +1,5 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import crypto from 'node:crypto';import {execFileSync} from 'node:child_process';import {pathToFileURL} from 'node:url';import {prepareSource,npmRun} from './setup-upstream.mjs';
+import {auditDependencies} from './check-dependencies.mjs';
 const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 export function verifyArchive(archive,manifest){if(sha(archive)!==manifest.artifactSha256)throw new Error('Artifact checksum mismatch');return true;}
 export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir}={}){
@@ -15,7 +16,7 @@ export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir
  // Never trust ignored build output left in the developer checkout.
  const freshEngine=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'boards-engine-build-')),'upstream');
  prepareSource({...lock,patches:lock.patches.map(p=>({...p,file:path.join(root,p.file)})),target:freshEngine});
- npmRun(['ci'],freshEngine);npmRun(['run','build'],freshEngine);npmRun(['prune','--omit=dev'],freshEngine);
+ npmRun(['ci'],freshEngine);auditDependencies(freshEngine);npmRun(['run','build'],freshEngine);npmRun(['prune','--omit=dev'],freshEngine);
  const runtimeEngine=path.join(stage,'.vendor/upstream');fs.mkdirSync(runtimeEngine,{recursive:true});
  for(const name of ['dist','assets','node_modules','package.json','package-lock.json','LICENSE']){const source=path.join(freshEngine,name);if(fs.existsSync(source))fs.cpSync(source,path.join(runtimeEngine,name),{recursive:true});}
  const licenses=[];
