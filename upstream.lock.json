@@ -13,6 +13,10 @@
     {
       "file": "patches/003-portable-shutdown.patch",
       "sha256": "974ff9ca9d7cc66a212b6ac3c437d350713a30cfcc0a1d1a62432e841f46ae1a"
+    },
+    {
+      "file": "patches/004-runtime-dependencies.patch",
+      "sha256": "13980ab942fc917173324454acb72c3a4dc38a95afb8be2249bfc4e94ab6536a"
     }
   ]
 }
