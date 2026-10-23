@@ -34,6 +34,10 @@ Reviewed fallback license snapshots and their URLs/SHA256 are in
 docs/licenses/sources.json. Builds use these local snapshots without fetching
 legal documents dynamically. Native platform packages use the corresponding
 same-version parent package license. Original notices in JS remain unchanged.
+One optional Rollup native helper has no supplied license text and is marked
+build-only-not-distributed. Its manifest and source reference are retained;
+the archive verifier requires that helper to be absent from runtime.
+See docs/licenses/BUILD-ONLY-NAPI-LZMA.md.
 
 Assistant browser fonts are OFL-1.1, Copyright 2020 The Assistant Project Authors
 and Copyright 2010 The Source Sans Pro Authors, Reserved Font Name Source.

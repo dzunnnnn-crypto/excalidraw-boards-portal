@@ -23,6 +23,7 @@ export function collectLicenses({engine,stage,root}) {
   if(m.name.startsWith('@radix-ui/')&&m.license==='MIT')return snapshot('RADIX-MIT.txt');
   if(m.name==='saxes'&&m.version==='6.0.0'&&m.license==='ISC')return snapshot('SAXES-LICENSE.txt');
   if(m.name==='react-remove-scroll-bar'&&m.version==='2.3.8'&&m.license==='MIT')return snapshot('REACT-REMOVE-SCROLL-BAR-MIT.txt');
+  if(m.name==='@napi-rs/lzma-linux-x64-gnu'&&m.version==='1.5.1'&&m.license==='MIT'&&m.main==='lzma.linux-x64-gnu.node')return {file:path.join(root,'docs/licenses/BUILD-ONLY-NAPI-LZMA.md'),source:'Published build-only package manifest; no license text supplied',notDistributed:true};
   const family=m.name.startsWith('@esbuild/')?'esbuild':m.name.startsWith('@rollup/')?'rollup':m.name.startsWith('@resvg/resvg-js-')?'@resvg/resvg-js':null;
   if(family){const dir=path.join(engine,'node_modules',family);const parent=JSON.parse(regular(path.join(dir,'package.json')));if(parent.version!==m.version)throw new Error('Native package/license version mismatch: '+m.name);const file=fs.readdirSync(dir).find(n=>/^license(?:\.|$)/i.test(n));if(file)return {file:path.join(dir,file),source:family+'@'+m.version};}
  }
@@ -39,18 +40,18 @@ export function collectLicenses({engine,stage,root}) {
    const license=typeof m.license==='string'?m.license:m.license?.type||m.licenses?.map(l=>typeof l==='string'?l:l.type).filter(Boolean).join(' OR ')||pinned.license||'LicenseRef-packaged-text';
    m.license=license;
    const key=m.name.replace(/[^a-zA-Z0-9._-]/g,'_')+'-'+m.version+'-'+hash(sourcePath).slice(0,10);
-   const target=path.join(output,key),documents=[];let origin='installed package';
+   const target=path.join(output,key),documents=[];let origin='installed package',notDistributed=false;
    const docs=fs.readdirSync(pkg).filter(n=>/^(?:licen[sc]e|notice|copying|copyright|unlicense)(?:[.\-_]|$)/i.test(n)&&fs.lstatSync(path.join(pkg,n)).isFile());
    for(const file of docs)documents.push(copy(path.join(pkg,file),path.join(target,file)));
    if(!documents.length){
     const readme=fs.readdirSync(pkg).find(n=>/^readme(?:\.|$)/i.test(n));
     if(readme&&/Permission is hereby granted|Permission to use, copy/.test(regular(path.join(pkg,readme)).toString()))documents.push(copy(path.join(pkg,readme),path.join(target,readme)));
-    else {const f=fallback(m);if(!f)throw new Error('No license text for '+m.name+'@'+m.version);origin=f.source;documents.push(copy(f.file,path.join(target,path.basename(f.file))));}
+    else {const f=fallback(m);if(!f)throw new Error('No license text for '+m.name+'@'+m.version);if(f.notDistributed&&!pinned.dev)throw new Error('Cannot waive runtime license text');notDistributed=!!f.notDistributed;origin=f.source;documents.push(copy(f.file,path.join(target,path.basename(f.file))));}
    }
    const metadata=Buffer.from(JSON.stringify({name:m.name,version:m.version,license:m.license,author:m.author,repository:m.repository},null,2)+'\n');
    const mf=path.join(target,'package-metadata.json');fs.mkdirSync(target,{recursive:true});fs.writeFileSync(mf,metadata);
    documents.push({path:under(stage,mf),sha256:hash(metadata)});
-   entries.push({name:m.name,version:m.version,license:m.license,scope:pinned.dev?'build-or-bundled':'runtime',sourcePackagePath:sourcePath,noticeSource:origin,documents});
+   entries.push({name:m.name,version:m.version,license:m.license,scope:notDistributed?'build-only-not-distributed':pinned.dev?'build-or-bundled':'runtime',notDistributed: notDistributed||undefined,sourcePackagePath:sourcePath,noticeSource:origin,documents});
    if(fs.existsSync(path.join(pkg,'node_modules')))visit(path.join(pkg,'node_modules'));
   }
  }
@@ -82,6 +83,7 @@ export function verifyLicenses(stage){
  const seen=new Set();
  for(const e of entries){
   if(!e.documents?.length||!e.license)throw new Error('Incomplete license entry');
+  if(e.notDistributed&&fs.existsSync(path.resolve(stage,'.vendor/upstream',e.sourcePackagePath)))throw new Error('Excluded build-only package was redistributed');
   for(const d of e.documents){const f=path.resolve(stage,d.path);under(stage,f);if(hash(regular(f))!==d.sha256)throw new Error('License document checksum mismatch: '+d.path);}
   if(e.assetPath){const f=path.resolve(stage,e.assetPath);under(stage,f);if(hash(regular(f))!==e.assetSha256)throw new Error('Font checksum mismatch');seen.add(e.assetPath);}
  }
