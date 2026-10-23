@@ -1,4 +1,5 @@
 import {lockStore} from './store-lock.mjs';
+import {acquireAuthorizedWorker} from './proxy-access.mjs';
 import {loadConfig} from './config.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -23,6 +24,7 @@ const workers=new Workers(appRoot,config.personalDataRoot,{maxWorkers:config.max
 const mcp=new RemoteMcp({appRoot,access,workers,port});mcp.origin=origin;
 const sockets=new Set(),attempts=new Map();
 const app=express();app.disable('x-powered-by');
+let stopping=false;
 function sessionOf(req){
   const raw=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='))?.slice(cookieName.length+1);
   if(!raw||!/^[-\w]{43}$/.test(raw))return null;
@@ -38,6 +40,7 @@ function member(req,res,next){if(!req.session?.user)throw fail(req.session?403:4
 function owner(req,board){if(access.permission(req.session,board)!=='owner')throw fail(403,'Доступом управляет владелец доски');}
 function changed(board){for(const c of sockets)if(c.board.id===board.id&&access.permission(c.session,board)!==c.role)c.client.close(1008,'Access changed');}
 app.use((req,res,next)=>{
+  if(stopping)throw fail(503,'Сервис завершает работу');
   res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'SAMEORIGIN','Cache-Control':'no-store'});
   req.session=sessionOf(req);
   const internal=req.path.startsWith('/internal/');
@@ -110,8 +113,9 @@ app.post('/api/invitations/redeem',body,(req,res)=>{
   if(!access.permission(req.session,access.board(i.board)))addSession(res,{role:'view',board:i.board,invitation:i.id,expires:Math.min(i.expires||Date.now()+30*day,Date.now()+30*day)});
   res.json({url:`/b/${i.board}/`});
 });
-async function proxy(req,res,board,target){
-  const {port:workerPort,release}=await workers.acquire(board);
+async function proxy(req,res,board,target,session=req.session){
+  const reading=['GET','HEAD'].includes(req.method)||req.method==='POST'&&target.split('?')[0]==='/api/export/image';
+  const {port:workerPort,release}=await acquireAuthorizedWorker({workers,access,session,board,write:!reading});
   const headers={...req.headers,host:'127.0.0.1'};for(const h of ['cookie','authorization','connection'])delete headers[h];
   const upstream=http.request({hostname:'127.0.0.1',port:workerPort,method:req.method,path:target,headers},response=>{
     const copied={...response.headers,'cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'};for(const h of ['set-cookie','access-control-allow-origin'])delete copied[h];
@@ -127,7 +131,7 @@ app.use('/internal/:cap',asyncRoute(async(req,res)=>{
   if(normalized!==req.path||(!normalized.startsWith('/api/')&&normalized!='/health'))throw fail(403,'Недопустимый адрес');
   const reading=['GET','HEAD'].includes(req.method)||req.method==='POST'&&normalized==='/api/export/image';
   access.require(job.session,job.board,!reading);if(job.readOnly&&!reading)throw fail(403,'Разрешён только просмотр');
-  await proxy(req,res,job.board,req.url);
+  await proxy(req,res,job.board,req.url,job.session);
 }));
 app.use(asyncRoute(async(req,res,next)=>{
   const match=/^\/b\/([a-z0-9-]+)(\/.*)?$/.exec(req.path);if(!match)return next();
@@ -151,6 +155,7 @@ app.use((req,res)=>res.status(404).json({error:'Страница не найде
 app.use((error,req,res,next)=>{if(res.headersSent)return next(error);res.status(error.status||500).json({error:error.status&&error.status!==500?error.message:'Не удалось выполнить запрос'});});
 const server=http.createServer(app),wss=new WebSocketServer({noServer:true,maxPayload:1024*1024});
 server.on('upgrade',async(req,socket,head)=>{
+  if(stopping){socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');return;}
   const match=/^\/b\/([a-z0-9-]+)\/ws$/.exec(req.url),board=match&&access.board(match[1]),session=sessionOf(req);
   if(!board||!access.permission(session,board)||req.headers.origin!==origin){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
   try{
@@ -168,6 +173,6 @@ server.on('upgrade',async(req,socket,head)=>{
 setInterval(()=>{for(const c of sockets)if(!access.permission(c.session,c.board))c.client.close(1008,'Access expired');for(const [ip,a]of attempts)if(a.until<=Date.now())attempts.delete(ip);},30000).unref();
 server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'Portal port is already in use; no other process was stopped.':error.message);process.exit(1);});
 server.listen(port,config.host,()=>console.log('Private boards portal v2 ready'));
-const shutdown=async()=>{for(const c of sockets){c.client.close();c.upstream.terminate();}await workers.close();server.close(()=>process.exit(0));setTimeout(()=>process.exit(0),3000).unref();};
+const shutdown=async()=>{if(stopping)return;stopping=true;const drained=new Promise(resolve=>server.close(resolve));for(const c of sockets){c.client.close();c.upstream.terminate();}await workers.close();await drained;process.exit(0);};
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,shutdown);
 process.on('message',m=>{if(m?.type==='portal:shutdown')void shutdown();});

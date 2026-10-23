@@ -12,9 +12,15 @@ export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir
  const commit=git(['rev-parse','HEAD']),stage=fs.mkdtempSync(path.join(os.tmpdir(),'boards-runtime-'));
  const files=execFileSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
  for(const name of files){const dest=path.join(stage,name);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(root,name),dest);}
+ // Never trust ignored build output left in the developer checkout.
+ const freshEngine=path.join(fs.mkdtempSync(path.join(os.tmpdir(),'boards-engine-build-')),'upstream');
+ prepareSource({...lock,patches:lock.patches.map(p=>({...p,file:path.join(root,p.file)})),target:freshEngine});
+ npmRun(['ci'],freshEngine);npmRun(['run','build'],freshEngine);npmRun(['prune','--omit=dev'],freshEngine);
  const runtimeEngine=path.join(stage,'.vendor/upstream');fs.mkdirSync(runtimeEngine,{recursive:true});
- for(const name of ['dist','assets','package.json','package-lock.json','LICENSE']){const source=path.join(engine,name);if(fs.existsSync(source))fs.cpSync(source,path.join(runtimeEngine,name),{recursive:true});}
- npmRun(['ci','--omit=dev'],runtimeEngine);
+ for(const name of ['dist','assets','node_modules','package.json','package-lock.json','LICENSE']){const source=path.join(freshEngine,name);if(fs.existsSync(source))fs.cpSync(source,path.join(runtimeEngine,name),{recursive:true});}
+ const licenses=[];
+ function inventory(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(e.name==='.bin'||e.isSymbolicLink())continue;const p=path.join(dir,e.name);if(e.isDirectory()){const meta=path.join(p,'package.json');if(fs.existsSync(meta)){const v=JSON.parse(fs.readFileSync(meta));licenses.push({name:v.name,version:v.version,license:v.license||'See package license files'});const nested=path.join(p,'node_modules');if(fs.existsSync(nested))inventory(nested);}else if(e.name.startsWith('@'))inventory(p);}}}
+ inventory(path.join(runtimeEngine,'node_modules'));fs.writeFileSync(path.join(stage,'THIRD_PARTY_INVENTORY.json'),JSON.stringify(licenses,null,2)+'\n');
  const meta={sourceCommit:commit,upstreamCommit:lock.commit,patches:lock.patches,nodeMajor:24,platform:process.platform,arch:process.arch,libc:'glibc',stateSchema:2};
  fs.writeFileSync(path.join(stage,'release.json'),JSON.stringify(meta,null,2)+'\n');
  const output=path.resolve(outDir||path.join(root,'release',commit.slice(0,12)));fs.mkdirSync(output,{recursive:true});

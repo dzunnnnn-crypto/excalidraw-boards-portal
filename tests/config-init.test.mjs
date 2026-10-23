@@ -14,7 +14,7 @@ test('local HTTP is explicit and loopback-only; production keeps secure cookies'
 test('demo initializes v2 once, secrets are hashed and live config is never initialized',async()=>{
  const file=path.join(root,'scripts/init-demo.mjs');assert(fs.existsSync(file),'demo initializer is required');const {initDemo}=await import(pathToFileURL(file));
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'boards-init-'));const r=initDemo({root:dir});const text=fs.readFileSync(r.authStateFile,'utf8');const state=JSON.parse(text);
- assert.equal(state.version,2);assert(state.users.alice.active);assert(state.users.bob.active);assert.equal(Object.keys(state.boards).length,1);
+ assert.equal(state.version,2);assert(state.users.alice.active);assert(state.users.bob.active);assert.equal(state.users.alice.name,'Алиса');assert.equal(Object.keys(state.boards).length,1);
  const seeded=JSON.parse(fs.readFileSync(path.join(r.personalDataRoot,'b-demo-project/canvas/canvas-state-v1.json')));assert.deepEqual(Object.keys(seeded).sort(),['elements','files','schemaVersion','snapshots']);assert(seeded.elements.length>0);
  const creds=JSON.parse(fs.readFileSync(path.join(dir,'.local/demo-credentials.json')));assert(!text.includes(creds.alice));assert(!text.includes(creds.bob));assert.notEqual(creds.alice,creds.bob);
  assert.throws(()=>initDemo({root:dir}),/exists|initialized/i);assert.equal(fs.readFileSync(r.authStateFile,'utf8'),text);

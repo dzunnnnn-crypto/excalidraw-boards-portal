@@ -10,7 +10,11 @@ export function backupOffline({dataDir,outDir}){
  if(within(source,fs.realpathSync(parent)))throw new Error('Backup paths overlap through an alias');
  function inspect(dir){for(const ent of fs.readdirSync(dir,{withFileTypes:true})){
   const file=path.join(dir,ent.name);if(ent.isSymbolicLink())throw new Error('Symlinks are not included in an offline backup');
-  if(ent.name==='.portal.lock'){const owner=JSON.parse(fs.readFileSync(file));if(alive(owner.pid))throw new Error('Portal is running; stop it before backup');}
+  if(ent.name==='.portal.lock'){
+   if(ent.isDirectory()){for(const name of fs.readdirSync(file)){const owner=JSON.parse(fs.readFileSync(path.join(file,name)));if(alive(owner.pid))throw new Error('Portal is running; stop it before backup');}}
+   else {const owner=JSON.parse(fs.readFileSync(file));if(alive(owner.pid))throw new Error('Portal is running; stop it before backup');}
+   continue;
+  }
   if(ent.name==='canvas-state.lock'){
    for(const name of fs.readdirSync(file)){const owner=JSON.parse(fs.readFileSync(path.join(file,name)));if(alive(owner.pid))throw new Error('Canvas is active; stop it before backup');}
   }else if(ent.isDirectory())inspect(file);

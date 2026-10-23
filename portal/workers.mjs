@@ -10,14 +10,17 @@ import { fail } from './access.mjs';
 export class Workers {
   constructor(appRoot,dataRoot,{maxWorkers=2,idleMs=120000}={}){this.maxWorkers=maxWorkers;this.idleMs=idleMs;this.appRoot=appRoot;this.dataRoot=dataRoot;this.running=new Map();this.tail=Promise.resolve();this.timer=setInterval(()=>this.reap(),30000);this.timer.unref();}
   async get(board){
+    if(this.closing)throw fail(503,'Workers are closing');
     if(board.port)return board.port;
-    const work=this.tail.then(()=>this.start(board));this.tail=work.catch(()=>{});return work;
+    const work=this.tail.then(()=>{if(this.closing)throw fail(503,'Workers are closing');return this.start(board);});this.tail=work.catch(()=>{});return work;
   }
   async acquire(board){
-    const work=this.tail.then(async()=>{const port=await this.startOrFixed(board);return {port,release:this.hold(board)};});this.tail=work.catch(()=>{});return work;
+    if(this.closing)throw fail(503,'Workers are closing');
+    const work=this.tail.then(async()=>{if(this.closing)throw fail(503,'Workers are closing');const port=await this.startOrFixed(board);return {port,release:this.hold(board)};});this.tail=work.catch(()=>{});return work;
   }
   startOrFixed(board){return board.port||this.start(board);}
   async start(board){
+    if(this.closing)throw fail(503,'Workers are closing');
     let worker=this.running.get(board.id);
     if(worker?.stopping){await worker.stopping;return this.start(board);}
     if(worker){worker.used=Date.now();return worker.port;}
@@ -41,5 +44,5 @@ export class Workers {
     return worker.stopping;
   }
   reap(){for(const w of this.running.values())if(!w.leases&&Date.now()-w.used>this.idleMs)void this.stop(w);}
-  async close(){clearInterval(this.timer);await Promise.all([...this.running.values()].map(w=>this.stop(w)));}
+  async close(){this.closing=true;clearInterval(this.timer);await this.tail.catch(()=>{});await Promise.all([...this.running.values()].map(w=>this.stop(w)));}
 }

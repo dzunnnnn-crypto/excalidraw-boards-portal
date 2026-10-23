@@ -2,7 +2,10 @@ import fs from 'node:fs';import path from 'node:path';
 export function loadConfig({root=path.resolve(import.meta.dirname,'..'),configPath,env=process.env}={}){
  const file=path.resolve(configPath||env.PORTAL_CONFIG||path.join(root,'config.local.json'));
  if(!fs.existsSync(file))throw new Error('Configuration missing. For an isolated local demo run npm run demo:init; for an existing installation supply PORTAL_CONFIG.');
- const c=JSON.parse(fs.readFileSync(file,'utf8'));const port=Number(c.port??8805),host=c.host||'127.0.0.1';
+ return resolveConfig(JSON.parse(fs.readFileSync(file,'utf8')),root);
+}
+export function resolveConfig(c,root){
+ const port=Number(c.port??8805),host=c.host||'127.0.0.1';
  if(!Number.isInteger(port)||port<1||port>65535||host!=='127.0.0.1')throw new Error('Portal must listen on loopback with a valid port');
  const u=new URL(c.origin);if(u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw new Error('Expected an origin without path or credentials');
  const localDemo=c.localDemo===true;
