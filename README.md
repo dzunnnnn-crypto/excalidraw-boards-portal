@@ -53,6 +53,7 @@ npm start
 - [Конфигурация и резервирование](docs/operations.md)
 - [Релизы и будущий переход VPS](docs/release-and-upgrade.md)
 - [Фактические проверки](docs/verification.md)
+- [Открытые вопросы зависимостей до публикации](docs/security-status.md)
 
 Лицензия дополнений MIT. Авторство и лицензии исходных проектов сохраняются
 в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
