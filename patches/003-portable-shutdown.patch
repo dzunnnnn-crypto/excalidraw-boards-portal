@@ -1,0 +1,37 @@
+diff --git a/scripts/check-durable-state.mjs b/scripts/check-durable-state.mjs
+index 547a523..d6a5d38 100644
+--- a/scripts/check-durable-state.mjs
++++ b/scripts/check-durable-state.mjs
+@@ -52,7 +52,7 @@ function spawnCanvas(canvasDataDirectory, port, preload) {
+   const child = spawn(runtime, args, {
+     cwd: repoRoot,
+     env,
+-    stdio: ['ignore', 'pipe', 'pipe'],
++    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+   });
+   let output = '';
+   child.stdout.on('data', chunk => { output += chunk.toString(); });
+@@ -100,7 +100,8 @@ function waitForExit(child, timeoutMs) {
+ 
+ async function stopCanvas(processInfo) {
+   if (!processInfo || processInfo.child.exitCode !== null || processInfo.child.signalCode !== null) return;
+-  processInfo.child.kill('SIGTERM');
++  if (processInfo.child.connected) processInfo.child.send({type:'canvas:shutdown'});
++  else processInfo.child.kill('SIGTERM');
+   const exit = await waitForExit(processInfo.child, 3500);
+   if (!exit) {
+     processInfo.child.kill('SIGKILL');
+diff --git a/src/server.ts b/src/server.ts
+index 77b298f..459e021 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -1606,6 +1606,9 @@ async function startServer(): Promise<void> {
+       process.exit(0);
+     }, 2000).unref();
+   };
++  process.on('message', (message: unknown) => {
++    if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'canvas:shutdown') shutdown('SIGTERM');
++  });
+   process.on('SIGTERM', () => shutdown('SIGTERM'));
+   process.on('SIGINT', () => shutdown('SIGINT'));
+   process.on('exit', () => {

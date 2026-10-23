@@ -1,1 +1,18 @@
-{"repository":"https://github.com/yctimlin/mcp_excalidraw.git","commit":"8084a1c8b410d625fcfd59d5cffb32f3a86a2a6f","patches":[]}
+{
+  "repository": "https://github.com/yctimlin/mcp_excalidraw.git",
+  "commit": "8084a1c8b410d625fcfd59d5cffb32f3a86a2a6f",
+  "patches": [
+    {
+      "file": "patches/001-portal-integration.patch",
+      "sha256": "b7979dd1f806d478647060c610dcd9dfdf63b3c87a815139552b116deb18aa51"
+    },
+    {
+      "file": "patches/002-navigation.patch",
+      "sha256": "2cfb79f34d2e839152760f144728591cc8606188ff2ba063b7f51a37cc25b0ae"
+    },
+    {
+      "file": "patches/003-portable-shutdown.patch",
+      "sha256": "974ff9ca9d7cc66a212b6ac3c437d350713a30cfcc0a1d1a62432e841f46ae1a"
+    }
+  ]
+}

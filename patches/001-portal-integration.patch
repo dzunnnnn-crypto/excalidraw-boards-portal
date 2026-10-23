@@ -1,0 +1,423 @@
+diff --git a/frontend/index.html b/frontend/index.html
+index 6145e45..8e35509 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -1,9 +1,9 @@
+ <!DOCTYPE html>
+-<html lang="en">
++<html lang="ru">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-    <title>Excalidraw POC - Backend API Integration</title>
++    <title>Рабочие доски</title>
+     <style>
+         body {
+             margin: 0;
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 2dfd3c9..51025c9 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -17,10 +17,14 @@ import type {
+ import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
+ import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
+ import { preloadCanvasFonts } from './utils/fonts'
++import { attachCanvasNavigation } from './utils/navigation'
+ import type { ServerElement } from './utils/scene'
+ import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
+ 
+ const LIBRARY_STORAGE_KEY = 'excalidraw-canvas-library'
++const BOARD_PREFIX = window.location.pathname.match(/^\/b\/[a-z0-9-]+/)?.[0] || ''
++const boardFetch = (url: string, options?: RequestInit): Promise<Response> => fetch(`${BOARD_PREFIX}${url}`, options)
++interface BoardSection { id: string; name: string }
+ 
+ /**
+  * Persists the user's library in this browser.
+@@ -106,7 +110,22 @@ const SCENE_MUTATIONS = new Set([
+ ]);
+ 
+ function App(): JSX.Element {
++  const [boardName, setBoardName] = useState('Доска')
++  const [isReadOnly, setIsReadOnly] = useState(true)
++  const [canNavigate, setCanNavigate] = useState(false)
++  const [canShare, setCanShare] = useState(false)
++  const [accessChanged, setAccessChanged] = useState(false)
++  const [sections, setSections] = useState<BoardSection[]>([])
++  const readOnlyRef = useRef(true)
++  const configReadyRef = useRef(false)
++  const sectionsRef = useRef<BoardSection[]>([])
++  const initialFitRef = useRef(false)
+   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
++  const canvasHostRef = useRef<HTMLDivElement | null>(null)
++  const observedSceneVersionRef = useRef('')
++  useEffect(() => {
++    if (canvasHostRef.current && excalidrawAPI) return attachCanvasNavigation(canvasHostRef.current, excalidrawAPI)
++  }, [excalidrawAPI])
+   // Ref so WS message handlers (captured in stale closures) always see the latest API instance
+   const excalidrawAPIRef = useRef<ExcalidrawAPIRefValue | null>(null)
+   useEffect(() => {
+@@ -171,7 +190,7 @@ function App(): JSX.Element {
+   }
+ 
+   const canSyncScene = (): boolean =>
+-    sceneLoadStatusRef.current === 'ready' && websocketRef.current?.readyState === WebSocket.OPEN
++    !readOnlyRef.current && sceneLoadStatusRef.current === 'ready' && websocketRef.current?.readyState === WebSocket.OPEN
+ 
+   const applySceneUpdateWithoutAutoSync = (
+     api: ExcalidrawImperativeAPI,
+@@ -212,6 +231,13 @@ function App(): JSX.Element {
+     }
+     sceneLoadStatusRef.current = 'ready'
+     setSceneLoadStatus('ready')
++    if (!initialFitRef.current && configReadyRef.current && prepared.length) {
++      initialFitRef.current = true
++      const requested = new URLSearchParams(window.location.search).get('section')
++      const focusId = requested || sectionsRef.current[0]?.id
++      const focus = focusId ? api.getSceneElements().filter(element => element.id === focusId) : []
++      api.scrollToContent(focus.length ? focus : api.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.8, animate: false })
++    }
+   }
+ 
+   useEffect(() => {
+@@ -253,8 +279,25 @@ function App(): JSX.Element {
+ 
+   // WebSocket connection
+   useEffect(() => {
+-    connectWebSocket()
++    let cancelled = false
++    void (async () => {
++      const response = await boardFetch('/api/board-config')
++      if (!response.ok) throw new Error('Доступ к доске закрыт')
++      const config = await response.json()
++      if (cancelled) return
++      readOnlyRef.current = !['owner', 'edit'].includes(config.role)
++      setCanNavigate(Boolean(config.member) || config.role === 'owner')
++      setCanShare(config.role === 'owner')
++      configReadyRef.current = true
++      sectionsRef.current = config.sections || []
++      setIsReadOnly(readOnlyRef.current)
++      setBoardName(config.name)
++      setSections(sectionsRef.current)
++      document.title = `${config.name} | Рабочие доски`
++      connectWebSocket()
++    })().catch(error => { if (!cancelled) failSceneLoad(error) })
+     return () => {
++      cancelled = true
+       sceneGenerationRef.current += 1
+       sceneLoadStatusRef.current = 'loading'
+       const socket = websocketRef.current
+@@ -277,13 +320,13 @@ function App(): JSX.Element {
+     if (!excalidrawAPIRef.current) return
+     const generation = pauseSceneSync()
+     try {
+-      const response = await fetch('/api/elements', { signal: AbortSignal.timeout(10000) })
++      const response = await boardFetch('/api/elements', { signal: AbortSignal.timeout(10000) })
+       const result: ApiResponse = await response.json()
+       if (generation !== sceneGenerationRef.current) return
+       if (!response.ok || !result.success || !Array.isArray(result.elements)) {
+         throw new Error(result.error || 'Invalid scene response')
+       }
+-      const filesResponse = await fetch('/api/files', { signal: AbortSignal.timeout(10000) })
++      const filesResponse = await boardFetch('/api/files', { signal: AbortSignal.timeout(10000) })
+       const filesResult = await filesResponse.json() as ApiResponse
+       if (generation !== sceneGenerationRef.current) return
+       if (!filesResponse.ok || !filesResult.files) {
+@@ -308,7 +351,7 @@ function App(): JSX.Element {
+     }
+ 
+     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+-    const wsUrl = `${protocol}//${window.location.host}`
++    const wsUrl = `${protocol}//${window.location.host}${BOARD_PREFIX}/ws`
+ 
+     const socket = new WebSocket(wsUrl)
+     websocketRef.current = socket
+@@ -332,6 +375,14 @@ function App(): JSX.Element {
+     socket.onclose = (event: CloseEvent) => {
+       if (websocketRef.current !== socket) return
+       setIsConnected(false)
++      if (event.code === 1008) {
++        setAccessChanged(true)
++        readOnlyRef.current = true
++        setIsReadOnly(true)
++        excalidrawAPIRef.current?.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.NEVER })
++        failSceneLoad('Доступ к доске отключён')
++        return
++      }
+       pauseSceneSync()
+ 
+       // Reconnect after 3 seconds if not a clean close
+@@ -450,6 +501,7 @@ function App(): JSX.Element {
+           break
+ 
+         case 'elements_synced':
++          if (readOnlyRef.current) void loadExistingElements()
+           console.log(`Sync confirmed by server: ${data.count} elements`)
+           // Sync confirmation already handled by HTTP response
+           break
+@@ -509,7 +561,7 @@ function App(): JSX.Element {
+                   exportingFrame
+                 })
+                 const svgString = new XMLSerializer().serializeToString(svg)
+-                await fetch('/api/export/image/result', {
++                await boardFetch('/api/export/image/result', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+@@ -535,7 +587,7 @@ function App(): JSX.Element {
+                     if (!base64) {
+                       throw new Error('Could not extract base64 data from result')
+                     }
+-                    await fetch('/api/export/image/result', {
++                    await boardFetch('/api/export/image/result', {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({
+@@ -546,7 +598,7 @@ function App(): JSX.Element {
+                     })
+                   } catch (readerError) {
+                     console.error('Image export (FileReader) failed:', readerError)
+-                    await fetch('/api/export/image/result', {
++                    await boardFetch('/api/export/image/result', {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({
+@@ -558,7 +610,7 @@ function App(): JSX.Element {
+                 }
+                 reader.onerror = async () => {
+                   console.error('FileReader error:', reader.error)
+-                  await fetch('/api/export/image/result', {
++                  await boardFetch('/api/export/image/result', {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({
+@@ -571,7 +623,7 @@ function App(): JSX.Element {
+               }
+             } catch (exportError) {
+               console.error('Image export failed:', exportError)
+-              await fetch('/api/export/image/result', {
++              await boardFetch('/api/export/image/result', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+@@ -640,7 +692,7 @@ function App(): JSX.Element {
+                 }
+               }
+ 
+-              await fetch('/api/viewport/result', {
++              await boardFetch('/api/viewport/result', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+@@ -651,7 +703,7 @@ function App(): JSX.Element {
+               })
+             } catch (viewportError) {
+               console.error('Viewport control failed:', viewportError)
+-              await fetch('/api/viewport/result', {
++              await boardFetch('/api/viewport/result', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+@@ -779,7 +831,7 @@ function App(): JSX.Element {
+       const newFiles = Object.values(api.getFiles()).filter(file =>
+         usedFileIds.has(file.id) && file.dataURL && !serverFileIdsRef.current.has(file.id))
+       for (const file of newFiles) {
+-        const fileResponse = await fetch('/api/files', {
++        const fileResponse = await boardFetch('/api/files', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ files: [{
+@@ -794,7 +846,7 @@ function App(): JSX.Element {
+       const backendElements = activeElements.map(convertToBackendFormat)
+ 
+       // 4. Send to backend
+-      const response = await fetch('/api/elements/sync', {
++      const response = await boardFetch('/api/elements/sync', {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+@@ -857,9 +909,10 @@ function App(): JSX.Element {
+ 
+   const clearCanvas = async (): Promise<void> => {
+     if (!canSyncScene()) return
++    if (!window.confirm('Удалить все элементы с доски? Перед очисткой сохраните нужную копию.')) return
+     const generation = pauseSceneSync()
+     try {
+-      const response = await fetch('/api/elements/clear', {
++      const response = await boardFetch('/api/elements/clear', {
+         method: 'DELETE', signal: AbortSignal.timeout(10000)
+       })
+       if (!response.ok) throw new Error('Could not clear the saved canvas')
+@@ -875,51 +928,61 @@ function App(): JSX.Element {
+     <div className="app" data-theme={theme}>
+       {/* Header */}
+       <div className="header">
+-        <h1>Excalidraw Canvas</h1>
++        <div style={{display:'flex',alignItems:'center',gap:16}}>
++          {canNavigate && <a href="/" style={{fontSize:14,color:'inherit'}}>← Доски</a>}
++          <h1>{boardName}</h1>
++          {isReadOnly && <span style={{fontSize:13}}>Только просмотр</span>}
++        </div>
+         <div className="controls">
++          {sections.length > 0 && <select aria-label="Раздел доски" defaultValue="" onChange={event => {
++            const api = excalidrawAPIRef.current
++            const target = api?.getSceneElements().filter(element => element.id === event.target.value)
++            if (api && target?.length) api.scrollToContent(target, {fitToViewport:true,viewportZoomFactor:0.85,animate:true})
++          }} style={{maxWidth:240,padding:8,borderRadius:6}}><option value="" disabled>Перейти к разделу</option>{sections.map(section => <option key={section.id} value={section.id}>{section.name}</option>)}</select>}
+           <div className="status">
+             <div className={`status-dot ${isConnected ? 'status-connected' : 'status-disconnected'}`}></div>
+-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
++            <span>{isConnected ? 'Сервер подключён' : 'Нет соединения'}</span>
+           </div>
+ 
+           {/* Sync Controls */}
+-          <div className="sync-controls">
++          {!isReadOnly && <div className="sync-controls">
+             <button
+               className={`btn-primary ${syncStatus === 'syncing' ? 'btn-loading' : ''}`}
+               onClick={() => void syncToBackend()}
+               disabled={syncStatus === 'syncing' || !excalidrawAPI || !isConnected || sceneLoadStatus !== 'ready'}
+             >
+               {syncStatus === 'syncing' && <span className="spinner"></span>}
+-              {syncStatus === 'syncing' ? 'Syncing...' : 'Sync to Backend'}
++              {syncStatus === 'syncing' ? 'Сохранение...' : 'Сохранить'}
+             </button>
+ 
+             {/* Sync Status */}
+             <div className="sync-status">
+               {syncStatus === 'success' && (
+-                <span className="sync-success">✅ Synced</span>
++                <span className="sync-success">Сохранено</span>
+               )}
+               {syncStatus === 'error' && (
+-                <span className="sync-error">❌ Sync Failed</span>
++                <span className="sync-error">Ошибка сохранения</span>
+               )}
+               {lastSyncTime && syncStatus === 'idle' && (
+                 <span className="sync-time">
+-                  Last sync: {formatSyncTime(lastSyncTime)}
++                  Сохранено в {formatSyncTime(lastSyncTime)}
+                 </span>
+               )}
+             </div>
+-          </div>
++          </div>}
+ 
+-          <button className="btn-secondary" onClick={clearCanvas} disabled={!isConnected || sceneLoadStatus !== 'ready'}>Clear Canvas</button>
++          {canShare && <a className="btn-secondary" href={`/?share=${BOARD_PREFIX.split('/')[2] || 'project'}`} style={{padding:8,borderRadius:6,textDecoration:'none',fontSize:14}}>Поделиться</a>}
++          {!isReadOnly && <button className="btn-secondary" onClick={clearCanvas} disabled={!isConnected || sceneLoadStatus !== 'ready'}>Очистить доску</button>}
+         </div>
+       </div>
+ 
+       {sceneLoadStatus !== 'ready' && (
+         <div className="scene-load-status" role={sceneLoadStatus === 'failed' ? 'alert' : 'status'}>
+           <span>{sceneLoadStatus === 'failed'
+-            ? 'Canvas could not be loaded. Sync is paused to protect your saved scene.'
+-            : 'Loading canvas. Sync is paused until the scene is ready.'}</span>
++            ? accessChanged ? 'Доступ к доске изменился. Обновите страницу, чтобы проверить права.' : 'Не удалось загрузить доску. Сохранение приостановлено, чтобы защитить ваши данные.'
++            : 'Загрузка доски...'}</span>
+           {sceneLoadStatus === 'failed' && (
+-            <button className="btn-secondary" onClick={() => void loadExistingElements()}>Retry loading</button>
++            <button className="btn-secondary" onClick={() => accessChanged ? window.location.reload() : void loadExistingElements()}>{accessChanged ? 'Обновить страницу' : 'Повторить загрузку'}</button>
+           )}
+         </div>
+       )}
+@@ -927,8 +990,9 @@ function App(): JSX.Element {
+       {/* Canvas Container */}
+       <div className="canvas-container">
+         <div
+-          onPointerDownCapture={() => {
+-            userInteractedRef.current = true
++          ref={canvasHostRef}
++          onPointerDownCapture={event => {
++            if (event.button !== 2) userInteractedRef.current = true
+           }}
+           onKeyDownCapture={() => {
+             userInteractedRef.current = true
+@@ -936,9 +1000,10 @@ function App(): JSX.Element {
+           style={{ width: '100%', height: '100%' }}
+         >
+           <Excalidraw
+-            viewModeEnabled={sceneLoadStatus !== 'ready'}
++            langCode="ru-RU"
++            viewModeEnabled={isReadOnly || sceneLoadStatus !== 'ready'}
+             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
+-            onChange={(_elements, appState) => {
++            onChange={(elements, appState) => {
+               if (appState?.theme && appState.theme !== theme) {
+                 setTheme(appState.theme)
+                 try {
+@@ -947,7 +1012,13 @@ function App(): JSX.Element {
+                   console.warn('Failed to save theme to localStorage:', error)
+                 }
+               }
+-              scheduleAutoSync()
++              // A new camera position/selection is not a content edit. Keep a
++              // pending real edit, but never schedule a full-scene write for pan/zoom.
++              const contentVersion = elements.map(el => `${el.id}:${el.version}:${el.versionNonce}:${Number(el.isDeleted)}`).join('|')
++              if (contentVersion !== observedSceneVersionRef.current) {
++                observedSceneVersionRef.current = contentVersion
++                scheduleAutoSync()
++              }
+             }}
+             initialData={{
+               elements: [],
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+index f3d02ae..35c90d8 100644
+--- a/frontend/src/main.tsx
++++ b/frontend/src/main.tsx
+@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
+ import App from './App.tsx'
+ import '@excalidraw/excalidraw/index.css'
+ 
++const boardPrefix = window.location.pathname.match(/^\/b\/[a-z0-9-]+/)?.[0] || '';
++(window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = `${boardPrefix}/assets/`;
++
+ const rootElement = document.getElementById('root');
+ if (!rootElement) {
+   throw new Error('Root element not found');
+@@ -12,4 +15,4 @@ ReactDOM.createRoot(rootElement).render(
+   <React.StrictMode>
+     <App />
+   </React.StrictMode>,
+-)
+\ No newline at end of file
++)
+diff --git a/src/core/spawn.ts b/src/core/spawn.ts
+index 0547c99..687de13 100644
+--- a/src/core/spawn.ts
++++ b/src/core/spawn.ts
+@@ -47,7 +47,7 @@ function unreachableError(reason: string): Error {
+   return error;
+ }
+ 
+-async function healthOrNull(timeoutMs = 500) {
++async function healthOrNull(timeoutMs = Number(process.env.EXCALIDRAW_HEALTH_TIMEOUT_MS || 500)) {
+   try {
+     return await getHealth(timeoutMs);
+   } catch {
+diff --git a/src/server.ts b/src/server.ts
+index f898900..77b298f 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -62,6 +62,9 @@ const wss = new WebSocketServer({ server });
+ // Middleware
+ app.use(cors());
+ app.use(express.json({ limit: '10mb' }));
++app.get('/api/board-config', (_req, res) => res.json({
++  id: process.env.BOARD_ID || 'project', name: process.env.BOARD_TITLE || 'Проект', role: 'owner', sections: []
++}));
+ 
+ // Serve static files from the build directory
+ const staticDir = path.join(__dirname, '../dist');
+diff --git a/vite.config.js b/vite.config.js
+index 4c5291d..6be4f73 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
+ 
+ export default defineConfig({
+   root: 'frontend',
++  base: './',
+   plugins: [react()],
+   build: {
+     outDir: '../dist/frontend',

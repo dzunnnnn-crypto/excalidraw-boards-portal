@@ -1,0 +1,115 @@
+diff --git a/frontend/src/utils/navigation.ts b/frontend/src/utils/navigation.ts
+new file mode 100644
+index 0000000..dbf7bd9
+--- /dev/null
++++ b/frontend/src/utils/navigation.ts
+@@ -0,0 +1,109 @@
++import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
++
++type NavigationAPI = Pick<ExcalidrawImperativeAPI, 'getAppState' | 'updateScene'>
++type Viewport = Pick<ReturnType<NavigationAPI['getAppState']>, 'scrollX' | 'scrollY' | 'offsetLeft' | 'offsetTop' | 'zoom'>
++
++/** Keep the scene point under the cursor fixed, including an offset editor. */
++export function zoomAtPointer(state: Viewport, clientX: number, clientY: number, delta: number) {
++  const value = Math.min(30, Math.max(0.1,
++    Math.round(state.zoom.value * Math.exp(-Math.max(-500, Math.min(500, delta)) * 0.0015) * 1e6) / 1e6))
++  return {
++    zoom: { value: value as typeof state.zoom.value },
++    scrollX: state.scrollX + (clientX - state.offsetLeft) * (1 / value - 1 / state.zoom.value),
++    scrollY: state.scrollY + (clientY - state.offsetTop) * (1 / value - 1 / state.zoom.value),
++  }
++}
++
++/** Desktop mouse navigation, scoped to the actual canvas, never menus/inputs. */
++export function attachCanvasNavigation(host: HTMLElement, api: NavigationAPI): () => void {
++  const win = host.ownerDocument.defaultView!
++  type Pan = { id: number; canvas: HTMLCanvasElement; x: number; y: number; startX: number; startY: number; moved: boolean; cursor: string }
++  let pan: Pan | null = null
++  let blockContextUntil = 0
++  let replayingContext = false
++  const canvasOf = (target: EventTarget | null): HTMLCanvasElement | null =>
++    target instanceof win.HTMLCanvasElement && target.classList.contains('interactive') ? target : null
++  const consume = (event: Event): void => { event.preventDefault(); event.stopImmediatePropagation() }
++  const update = (appState: ReturnType<typeof zoomAtPointer> | Pick<Viewport, 'scrollX' | 'scrollY'>): void => {
++    // Camera changes must never enter undo history or replace scene elements.
++    api.updateScene({ appState, captureUpdate: 'NEVER' as Parameters<NavigationAPI['updateScene']>[0]['captureUpdate'] })
++  }
++  const onWheel = (event: WheelEvent): void => {
++    if (!canvasOf(event.target) || event.ctrlKey || event.metaKey || event.shiftKey || api.getAppState().editingTextElement) return
++    consume(event)
++    if (pan || !event.deltaY) return
++    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? host.clientHeight || 800 : 1)
++    update(zoomAtPointer(api.getAppState(), event.clientX, event.clientY, pixels))
++  }
++  const finish = (openMenu = false, event?: PointerEvent): void => {
++    const previous = pan
++    if (!previous) return
++    pan = null
++    previous.canvas.style.cursor = previous.cursor
++    if (previous.canvas.hasPointerCapture?.(previous.id)) previous.canvas.releasePointerCapture(previous.id)
++    blockContextUntil = Date.now() + 400
++    if (openMenu && !previous.moved) {
++      // Some browsers open contextmenu on down, some on up. Defer exactly one
++      // normal Excalidraw menu until we know this was a click, not a pan.
++      replayingContext = true
++      try {
++        previous.canvas.dispatchEvent(new win.MouseEvent('contextmenu', {
++          bubbles: true, cancelable: true, button: 2,
++          clientX: event?.clientX ?? previous.x, clientY: event?.clientY ?? previous.y,
++          ctrlKey: event?.ctrlKey, shiftKey: event?.shiftKey, altKey: event?.altKey, metaKey: event?.metaKey,
++        }))
++      } finally { replayingContext = false }
++    }
++  }
++  const onDown = (event: PointerEvent): void => {
++    const canvas = canvasOf(event.target)
++    if (!canvas || event.button !== 2 || event.pointerType !== 'mouse' || (event.buttons & 1)) return
++    finish()
++    consume(event)
++    pan = { id: event.pointerId, canvas, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false, cursor: canvas.style.cursor }
++    try { canvas.setPointerCapture(event.pointerId) } catch { /* window listeners still finish a released pointer */ }
++  }
++  const move = (event: PointerEvent): void => {
++    if (!pan || event.pointerId !== pan.id) return
++    if (!(event.buttons & 2)) { finish(); return }
++    consume(event)
++    if (!pan.moved && Math.hypot(event.clientX - pan.startX, event.clientY - pan.startY) < 4) return
++    pan.moved = true
++    pan.canvas.style.cursor = 'grabbing'
++    const state = api.getAppState()
++    update({ scrollX: state.scrollX + (event.clientX - pan.x) / state.zoom.value, scrollY: state.scrollY + (event.clientY - pan.y) / state.zoom.value })
++    pan.x = event.clientX; pan.y = event.clientY
++  }
++  const onUp = (event: PointerEvent): void => {
++    if (!pan || event.pointerId !== pan.id) return
++    consume(event)
++    finish(event.type === 'pointerup' && event.button === 2, event)
++  }
++  const onContext = (event: MouseEvent): void => {
++    if (!replayingContext && canvasOf(event.target) && (pan || Date.now() < blockContextUntil)) consume(event)
++  }
++  const onLostCapture = (event: PointerEvent): void => { if (pan?.id === event.pointerId) finish() }
++  const onBlur = (): void => finish()
++  const onKey = (event: KeyboardEvent): void => { if (pan && event.key === 'Escape') { consume(event); finish() } }
++  host.addEventListener('wheel', onWheel, { capture: true, passive: false })
++  host.addEventListener('pointerdown', onDown, true)
++  host.addEventListener('contextmenu', onContext, true)
++  host.addEventListener('lostpointercapture', onLostCapture, true)
++  win.addEventListener('pointermove', move, true)
++  win.addEventListener('pointerup', onUp, true)
++  win.addEventListener('pointercancel', onUp, true)
++  win.addEventListener('blur', onBlur)
++  win.addEventListener('keydown', onKey, true)
++  return () => {
++    finish()
++    host.removeEventListener('wheel', onWheel, true)
++    host.removeEventListener('pointerdown', onDown, true)
++    host.removeEventListener('contextmenu', onContext, true)
++    host.removeEventListener('lostpointercapture', onLostCapture, true)
++    win.removeEventListener('pointermove', move, true)
++    win.removeEventListener('pointerup', onUp, true)
++    win.removeEventListener('pointercancel', onUp, true)
++    win.removeEventListener('blur', onBlur)
++    win.removeEventListener('keydown', onKey, true)
++  }
++}
