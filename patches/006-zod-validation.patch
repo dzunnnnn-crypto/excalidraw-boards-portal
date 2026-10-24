@@ -1,0 +1,276 @@
+diff --git a/package-lock.json b/package-lock.json
+index c154c70..35a6695 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -18,8 +18,7 @@
+         "jsdom": "^26.1.0",
+         "winston": "^3.11.0",
+         "ws": "^8.21.3",
+-        "zod": "^3.22.4",
+-        "zod-to-json-schema": "^3.22.3"
++        "zod": "4.6.7"
+       },
+       "bin": {
+         "excalidraw-canvas": "dist/bin.js",
+@@ -1270,15 +1269,6 @@
+         "node": ">=20"
+       }
+     },
+-    "node_modules/@modelcontextprotocol/core/node_modules/zod": {
+-      "version": "4.4.3",
+-      "resolved": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+-      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/colinhacks"
+-      }
+-    },
+     "node_modules/@modelcontextprotocol/server": {
+       "version": "2.3.1",
+       "resolved": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.3.1.tgz",
+@@ -1292,15 +1282,6 @@
+         "node": ">=20"
+       }
+     },
+-    "node_modules/@modelcontextprotocol/server/node_modules/zod": {
+-      "version": "4.4.3",
+-      "resolved": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+-      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/colinhacks"
+-      }
+-    },
+     "node_modules/@napi-rs/lzma-linux-x64-gnu": {
+       "version": "1.5.1",
+       "resolved": "https://registry.npmjs.org/@napi-rs/lzma-linux-x64-gnu/-/lzma-linux-x64-gnu-1.5.1.tgz",
+@@ -7622,23 +7603,14 @@
+       }
+     },
+     "node_modules/zod": {
+-      "version": "3.25.76",
+-      "resolved": "https://registry.npmjs.org/zod/-/zod-3.25.76.tgz",
+-      "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==",
++      "version": "4.6.7",
++      "resolved": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
++      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==",
+       "license": "MIT",
+       "funding": {
+         "url": "https://github.com/sponsors/colinhacks"
+       }
+     },
+-    "node_modules/zod-to-json-schema": {
+-      "version": "3.24.6",
+-      "resolved": "https://registry.npmjs.org/zod-to-json-schema/-/zod-to-json-schema-3.24.6.tgz",
+-      "integrity": "sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==",
+-      "license": "ISC",
+-      "peerDependencies": {
+-        "zod": "^3.24.1"
+-      }
+-    },
+     "node_modules/zustand": {
+       "version": "4.5.7",
+       "resolved": "https://registry.npmjs.org/zustand/-/zustand-4.5.7.tgz",
+diff --git a/package.json b/package.json
+index c383780..8dfa1a6 100644
+--- a/package.json
++++ b/package.json
+@@ -42,8 +42,7 @@
+     "jsdom": "^26.1.0",
+     "winston": "^3.11.0",
+     "ws": "^8.21.3",
+-    "zod": "^3.22.4",
+-    "zod-to-json-schema": "^3.22.3"
++    "zod": "4.6.7"
+   },
+   "devDependencies": {
+     "@excalidraw/excalidraw": "^0.18.1",
+@@ -126,6 +125,7 @@
+     "lodash-es": "4.18.1",
+     "source-map-js": "1.2.2",
+     "shell-quote": "1.12.0",
+-    "katex": "0.18.2"
++    "katex": "0.18.2",
++    "zod": "4.6.7"
+   }
+ }
+diff --git a/src/core/mcp-dispatch.ts b/src/core/mcp-dispatch.ts
+index 79d8a70..fff0fe4 100644
+--- a/src/core/mcp-dispatch.ts
++++ b/src/core/mcp-dispatch.ts
+@@ -1,5 +1,6 @@
+ import type { CallToolResult } from '@modelcontextprotocol/server';
+ import { z } from 'zod';
++import { boundedArray } from './validation.js';
+ import fs from 'fs';
+ import logger from '../utils/logger.js';
+ import {
+@@ -48,7 +49,7 @@ const imageRenderParams = {
+   dark: z.boolean().optional(),
+   scale: z.number().min(1).max(4).optional(),
+   padding: z.number().min(0).optional(),
+-  elementIds: z.array(z.string()).min(1).optional(),
++  elementIds: boundedArray(z.string()).min(1).optional(),
+   frameId: z.string().optional(),
+   embedScene: z.boolean().default(false)
+ };
+@@ -66,7 +67,7 @@ const ElementSchema = z.object({
+   y: z.number(),
+   width: z.number().optional(),
+   height: z.number().optional(),
+-  points: z.array(PointSchema).optional(),
++  points: boundedArray(PointSchema).optional(),
+   backgroundColor: z.string().optional(),
+   strokeColor: z.string().optional(),
+   strokeWidth: z.number().optional(),
+@@ -75,7 +76,7 @@ const ElementSchema = z.object({
+   text: z.string().optional(),
+   fontSize: z.number().optional(),
+   fontFamily: z.union([z.string(), z.number()]).optional(),
+-  groupIds: z.array(z.string()).optional(),
++  groupIds: boundedArray(z.string()).optional(),
+   locked: z.boolean().optional(),
+   strokeStyle: z.string().optional(),
+   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
+@@ -92,7 +93,7 @@ const ElementIdSchema = z.object({
+ });
+ 
+ const ElementIdsSchema = z.object({
+-  elementIds: z.array(z.string())
++  elementIds: boundedArray(z.string())
+ });
+ 
+ const GroupIdSchema = z.object({
+@@ -100,18 +101,18 @@ const GroupIdSchema = z.object({
+ });
+ 
+ const AlignElementsSchema = z.object({
+-  elementIds: z.array(z.string()),
++  elementIds: boundedArray(z.string()),
+   alignment: z.enum(['left', 'center', 'right', 'top', 'middle', 'bottom'])
+ });
+ 
+ const DistributeElementsSchema = z.object({
+-  elementIds: z.array(z.string()),
++  elementIds: boundedArray(z.string()),
+   direction: z.enum(['horizontal', 'vertical'])
+ });
+ 
+ const QuerySchema = z.object({
+   type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]).optional(),
+-  filter: z.record(z.any()).optional(),
++  filter: z.record(z.string(), z.any()).optional(),
+   bbox: z.object({
+     x_min: z.number().optional(),
+     x_max: z.number().optional(),
+@@ -425,7 +426,7 @@ export async function callExcalidrawTool(
+         }
+       }
+       case 'batch_create_elements': {
+-        const params = z.object({ elements: z.array(ElementSchema) }).parse(args);
++        const params = z.object({ elements: boundedArray(ElementSchema) }).parse(args);
+         logger.info('Batch creating elements via MCP', { count: params.elements.length });
+ 
+         const createdElements: ServerElement[] = params.elements.map(elementData => prepareElement(elementData));
+@@ -575,7 +576,7 @@ export async function callExcalidrawTool(
+       }
+       case 'duplicate_elements': {
+         const params = z.object({
+-          elementIds: z.array(z.string()),
++          elementIds: boundedArray(z.string()),
+           offsetX: z.number().optional(),
+           offsetY: z.number().optional()
+         }).parse(args);
+@@ -686,7 +687,7 @@ export async function callExcalidrawTool(
+       case 'set_viewport': {
+         const viewportParams = z.object({
+           scrollToContent: z.boolean().optional(),
+-          scrollToElementIds: z.array(z.string().min(1)).min(1).optional(),
++          scrollToElementIds: boundedArray(z.string().min(1)).min(1).optional(),
+           viewportZoomFactor: z.number().positive().max(1).optional(),
+           scrollToElementId: z.string().min(1).optional(),
+           zoom: z.number().min(0.1).max(10).optional(),
+diff --git a/src/core/validation.ts b/src/core/validation.ts
+new file mode 100644
+index 0000000..87ed584
+--- /dev/null
++++ b/src/core/validation.ts
+@@ -0,0 +1,7 @@
++import { z } from 'zod';
++
++// Bound before walking children, including invalid items (GHSA-mrhx-c7xc-m3w5).
++// This limits schema collections, not the total number of elements on a board.
++export const MAX_VALIDATION_ITEMS = 10000;
++export const boundedArray = <T extends z.ZodType>(item: T) =>
++  z.array(item).max(MAX_VALIDATION_ITEMS);
+diff --git a/src/server.ts b/src/server.ts
+index 459e021..2b34994 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -27,6 +27,7 @@ import {
+   normalizeFontFamily
+ } from './types.js';
+ import { z } from 'zod';
++import { boundedArray } from './core/validation.js';
+ import WebSocket from 'ws';
+ import { isMainModule } from './core/entry.js';
+ import { writePidFile, removePidFile } from './core/pidfile.js';
+@@ -225,7 +226,7 @@ const CreateElementSchema = z.object({
+   seed: z.number().optional(),
+   versionNonce: z.number().optional(),
+   updated: z.number().optional(),
+-  groupIds: z.array(z.string()).optional(),
++  groupIds: boundedArray(z.string()).optional(),
+   locked: z.boolean().optional(),
+   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
+   fillStyle: z.string().optional(),
+@@ -251,7 +252,7 @@ const CreateElementSchema = z.object({
+     fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
+     mode: z.string().optional(),
+   }).nullable().optional(),
+-  boundElements: z.array(z.object({
++  boundElements: boundedArray(z.object({
+     id: z.string(),
+     type: z.enum(['arrow', 'text']),
+   })).nullable().optional(),
+@@ -291,11 +292,11 @@ const UpdateElementSchema = z.object({
+   seed: z.number().optional(),
+   versionNonce: z.number().optional(),
+   updated: z.number().optional(),
+-  groupIds: z.array(z.string()).optional(),
++  groupIds: boundedArray(z.string()).optional(),
+   locked: z.boolean().optional(),
+   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
+   fillStyle: z.string().optional(),
+-  points: z.array(z.union([
++  points: boundedArray(z.union([
+     z.tuple([z.number(), z.number()]),
+     z.object({ x: z.number(), y: z.number() })
+   ])).optional(),
+@@ -319,7 +320,7 @@ const UpdateElementSchema = z.object({
+     fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
+     mode: z.string().optional(),
+   }).nullable().optional(),
+-  boundElements: z.array(z.object({
++  boundElements: boundedArray(z.object({
+     id: z.string(),
+     type: z.enum(['arrow', 'text']),
+   })).nullable().optional(),
+@@ -1037,7 +1038,7 @@ const exportImageSchema = z.object({
+   dark: z.boolean().optional(),
+   scale: z.number().min(1).max(MAX_SCALE).optional(),
+   padding: z.number().min(0).optional(),
+-  elementIds: z.array(z.string()).min(1).optional(),
++  elementIds: boundedArray(z.string()).min(1).optional(),
+   frameId: z.string().optional(),
+   embedScene: z.boolean().default(false),
+   embedFonts: z.boolean().optional()
+@@ -1212,7 +1213,7 @@ const pendingViewports = new Map<string, PendingViewport>();
+ 
+ const viewportRequestSchema = z.object({
+   scrollToContent: z.boolean().optional(),
+-  scrollToElementIds: z.array(z.string().min(1)).min(1).optional(),
++  scrollToElementIds: boundedArray(z.string().min(1)).min(1).optional(),
+   viewportZoomFactor: z.number().positive().max(1).optional(),
+   scrollToElementId: z.string().min(1).optional(),
+   zoom: z.number().min(0.1).max(10).optional(),

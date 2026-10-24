@@ -21,6 +21,10 @@
     {
       "file": "patches/005-frontend-dependencies.patch",
       "sha256": "fe1a097212cb8e6f2958b06c486d9be7f8a76f2f8920e2aa64b4cad62fc999a4"
+    },
+    {
+      "file": "patches/006-zod-validation.patch",
+      "sha256": "1df3625739dcc5ba24988d0b92443bd945be387b2cb8ce3e1ee3f63d4496b688"
     }
   ]
 }
