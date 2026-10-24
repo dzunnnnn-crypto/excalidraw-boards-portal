@@ -10,9 +10,11 @@
 
 ## Быстрый запуск
 
-Нужны Node.js 24 и Git. Из корня проекта:
+Нужны Node.js 24 и Git:
 
 ```text
+git clone https://github.com/dzunnnnn-crypto/excalidraw-boards-portal.git
+cd excalidraw-boards-portal
 npm ci
 npm run setup
 npm run demo:init
@@ -34,7 +36,7 @@ devDependencies, поскольку часть библиотек входит �
 
 ## Что можно посмотреть
 
-- Создание личной доски, совместный просмотр и редактирование.
+- Создание личной доски, общий доступ для просмотра и правки по очереди.
 - Гостевая ссылка только для просмотра и её отзыв.
 - Личный ключ на странице «Codex», MCP endpoint /mcp.
 - AI видит доступные пользователю доски и работает с явно указанной.
@@ -80,4 +82,5 @@ Linux-релиз содержит THIRD_PARTY_INVENTORY.json и THIRD_PARTY_LICE
 `node scripts/collect-licenses.mjs /path/to/unpacked-release`.
 [Рабочий кейс в портфолио](https://portfolio.marfino76.ru/#boards-case).
 
-На GitHub пока не опубликовано. Действующая установка VPS этим пакетом не изменена.
+Исходники: [dzunnnnn-crypto/excalidraw-boards-portal](https://github.com/dzunnnnn-crypto/excalidraw-boards-portal).
+Публикация репозитория не обновляет действующую установку VPS.
