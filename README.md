@@ -82,5 +82,7 @@ Linux-релиз содержит THIRD_PARTY_INVENTORY.json и THIRD_PARTY_LICE
 `node scripts/collect-licenses.mjs /path/to/unpacked-release`.
 [Рабочий кейс в портфолио](https://portfolio.marfino76.ru/#boards-case).
 
-Исходники: [dzunnnnn-crypto/excalidraw-boards-portal](https://github.com/dzunnnnn-crypto/excalidraw-boards-portal).
+Планируемый адрес репозитория: [dzunnnnn-crypto/excalidraw-boards-portal](https://github.com/dzunnnnn-crypto/excalidraw-boards-portal).
+Проверка 24.10.2026 выявила замечание к Zod, подготовка исправления описана
+в [состоянии зависимостей](docs/security-status.md). Публикация ещё не выполнена.
 Публикация репозитория не обновляет действующую установку VPS.
