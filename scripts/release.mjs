@@ -3,6 +3,19 @@ import {auditDependencies} from './check-dependencies.mjs';
 import {collectLicenses,verifyLicenses} from './collect-licenses.mjs';
 const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 export function verifyArchive(archive,manifest){if(sha(archive)!==manifest.artifactSha256)throw new Error('Artifact checksum mismatch');return true;}
+export function copyRuntimeEngine(sourceRoot,target){
+ fs.mkdirSync(target,{recursive:true});
+ for(const name of ['dist','assets','node_modules','package.json','package-lock.json','LICENSE']){
+  const source=path.join(sourceRoot,name);
+  if(fs.existsSync(source))fs.cpSync(source,path.join(target,name),{recursive:true,verbatimSymlinks:true});
+ }
+ const bins=path.join(target,'node_modules/.bin');
+ if(fs.existsSync(bins))for(const name of fs.readdirSync(bins)){
+  const file=path.join(bins,name);if(!fs.lstatSync(file).isSymbolicLink())continue;
+  const link=fs.readlinkSync(file),resolved=fs.realpathSync(file);
+  if(path.isAbsolute(link)||!resolved.startsWith(path.resolve(target)+path.sep))throw new Error('Non-portable runtime executable link: '+name);
+ }
+}
 export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir}={}){
  if(process.platform!=='linux'||!process.report.getReport().header.glibcVersionRuntime)throw new Error('Deployment artifact requires Linux with glibc; never copy Windows node_modules to VPS');
  const git=args=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
@@ -20,8 +33,7 @@ export function buildRelease({root=path.resolve(import.meta.dirname,'..'),outDir
  npmRun(['ci'],freshEngine);auditDependencies(freshEngine);npmRun(['run','build'],freshEngine);
  collectLicenses({engine:freshEngine,stage,root});
  npmRun(['prune','--omit=dev'],freshEngine);
- const runtimeEngine=path.join(stage,'.vendor/upstream');fs.mkdirSync(runtimeEngine,{recursive:true});
- for(const name of ['dist','assets','node_modules','package.json','package-lock.json','LICENSE']){const source=path.join(freshEngine,name);if(fs.existsSync(source))fs.cpSync(source,path.join(runtimeEngine,name),{recursive:true});}
+ const runtimeEngine=path.join(stage,'.vendor/upstream');copyRuntimeEngine(freshEngine,runtimeEngine);
  console.log('Verified license entries:',verifyLicenses(stage));
  const meta={sourceCommit:commit,upstreamCommit:lock.commit,patches:lock.patches,nodeMajor:24,platform:process.platform,arch:process.arch,libc:'glibc',stateSchema:2};
  fs.writeFileSync(path.join(stage,'release.json'),JSON.stringify(meta,null,2)+'\n');

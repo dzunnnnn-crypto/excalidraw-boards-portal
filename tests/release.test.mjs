@@ -10,3 +10,17 @@ test('deployment artifact requires Linux and refuses an unverified archive',asyn
 test('Linux builder rejects a dirty source before any build',{skip:process.platform!=='linux'},async()=>{
  const {buildRelease}=await import('../scripts/release.mjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'boards-dirty-'));execFileSync('git',['init',dir],{stdio:'ignore'});fs.writeFileSync(path.join(dir,'unknown.txt'),'unreviewed source');assert.throws(()=>buildRelease({root:dir,outDir:path.join(dir,'out')}),/dirty working tree/);
 });
+
+test('runtime executable links remain usable after moving the build',{skip:process.platform!=='linux'},async()=>{
+ const {copyRuntimeEngine}=await import('../scripts/release.mjs');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'boards-runtime-links-')),source=path.join(dir,'source'),target=path.join(dir,'release');
+ fs.mkdirSync(path.join(source,'node_modules/.bin'),{recursive:true});fs.mkdirSync(path.join(source,'node_modules/example/bin'),{recursive:true});
+ fs.writeFileSync(path.join(source,'node_modules/example/bin/cli.js'),"console.log('portable runtime')");
+ fs.symlinkSync('../example/bin/cli.js',path.join(source,'node_modules/.bin/example'));
+ copyRuntimeEngine(source,target);fs.renameSync(source,path.join(dir,'old-build-location'));
+ const link=path.join(target,'node_modules/.bin/example');assert.equal(fs.readlinkSync(link),'../example/bin/cli.js');
+ assert.equal(execFileSync(process.execPath,[link],{encoding:'utf8'}).trim(),'portable runtime');
+ const bad=path.join(dir,'bad');fs.mkdirSync(path.join(bad,'node_modules/.bin'),{recursive:true});
+ fs.symlinkSync(path.join(dir,'old-build-location/node_modules/example/bin/cli.js'),path.join(bad,'node_modules/.bin/example'));
+ assert.throws(()=>copyRuntimeEngine(bad,path.join(dir,'invalid-release')),/Non-portable/);
+});
