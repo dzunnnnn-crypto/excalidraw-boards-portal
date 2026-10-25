@@ -34,13 +34,25 @@ export class Access {
   require(session,board,edit=false){const role=this.permission(session,board);if(!role||edit&&role==='view')throw fail(403,'Нет доступа к этому действию');return role;}
   publicBoard(session,board){const role=this.permission(session,board);return {id:board.id,name:board.name,description:board.description||'',color:board.color||'#326c96',url:`/b/${board.id}/`,role,ownerName:this.user(board.owner)?.name||'',sections:board.sections||[],shared:!!Object.keys(board.grants).length||Object.values(this.state.invitations).some(i=>i.board===board.id&&!i.revoked&&(!i.expires||i.expires>Date.now()))};}
   list(session){return Object.values(this.state.boards).filter(b=>this.permission(session,b)).map(b=>this.publicBoard(session,b));}
-  create(session,{name,description=''}){
+  create(session,{name,description='',sharedWith=[],creationKey}){
     if(!session.user||!this.valid(session))throw fail(403,'Нужна личная учётная запись');
     if(typeof name!=='string'||!name.trim()||name.length>120||typeof description!=='string'||description.length>500)throw fail(400,'Укажите название до 120 символов');
+    if(!Array.isArray(sharedWith)||sharedWith.length>10||sharedWith.some(id=>typeof id!=='string'||!this.user(id)?.active))throw fail(400,'Проверьте участников новой доски');
+    if(creationKey!==undefined&&(typeof creationKey!=='string'||!/^[-a-zA-Z0-9]{16,80}$/.test(creationKey)))throw fail(400,'Некорректный ключ создания');
+    const members=[...new Set(sharedWith)].filter(id=>id!==session.user).sort();
+    const previous=creationKey&&Object.values(this.state.boards).find(b=>b.owner===session.user&&b.creationKey===creationKey);
+    if(previous){
+      if(previous.name!==name.trim()||previous.description!==description.trim()||JSON.stringify(previous.creationMembers)!==JSON.stringify(members))throw fail(409,'Ключ уже использован для другой доски');
+      if(members.some(id=>previous.grants[id]!=='edit'))throw fail(409,'Доступ изменён после создания. Проверьте доску, автоматическое восстановление прав запрещено');
+      return this.createdBoard(session,previous,members);
+    }
     const id='b-'+crypto.randomBytes(8).toString('hex');
-    const board={id,name:name.trim(),description:description.trim(),owner:session.user,grants:{},sections:[],created:Date.now(),color:'#557566'};
-    this.state.boards[id]=board;this.save();return this.publicBoard(session,board);
+    const board={id,name:name.trim(),description:description.trim(),owner:session.user,grants:Object.fromEntries(members.map(id=>[id,'edit'])),sections:[],created:Date.now(),color:'#557566',...(creationKey?{creationKey,creationMembers:members}:{})};
+    this.state.boards[id]=board;
+    try{this.save();}catch(error){delete this.state.boards[id];throw error;}
+    return this.createdBoard(session,board,members);
   }
+  createdBoard(session,board,members){return {...this.publicBoard(session,board),owner:board.owner,sharedWith:members.map(user=>({user,role:board.grants[user]}))};}
   token(user,label='Codex'){
     const raw=secret(),id=crypto.randomUUID();this.state.tokens[id]={id,user,label,hash:digest(raw),created:Date.now(),revoked:false};this.save();return {id,token:raw};
   }

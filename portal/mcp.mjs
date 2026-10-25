@@ -18,7 +18,7 @@ export class RemoteMcp {
       });
       this.tools.unshift(
         {name:'list_boards',description:'List only your own boards and boards shared with you, including your permissions and URLs.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true}},
-        {name:'create_board',description:'Create a private board owned by you. Nobody else receives access automatically.',inputSchema:{type:'object',properties:{name:{type:'string',maxLength:120},description:{type:'string',maxLength:500}},required:['name'],additionalProperties:false},annotations:{readOnlyHint:false}}
+        {name:'create_board',description:'Create a board owned by you. Private by default. Explicit sharedWith user IDs receive edit access atomically at creation. Reuse creationKey to recover an uncertain result without creating duplicates.',inputSchema:{type:'object',properties:{name:{type:'string',maxLength:120},description:{type:'string',maxLength:500},sharedWith:{type:'array',maxItems:10,items:{type:'string'}},creationKey:{type:'string',minLength:16,maxLength:80}},required:['name'],additionalProperties:false},annotations:{readOnlyHint:false}}
       );
     }
     return this.tools;
