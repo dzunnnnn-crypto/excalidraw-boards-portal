@@ -1,0 +1,196 @@
+diff --git a/src/core/canvas-persistence.ts b/src/core/canvas-persistence.ts
+index d5aa937..5c69bf6 100644
+--- a/src/core/canvas-persistence.ts
++++ b/src/core/canvas-persistence.ts
+@@ -1,3 +1,4 @@
++import {heldIsolatedLease} from './isolated-lease.js';
+ import {
+   closeSync,
+   existsSync,
+@@ -488,6 +489,7 @@ function processIsRunning(pid: number): boolean {
+ }
+ 
+ interface LockOwner {
++  lease?: string;
+   pid: number;
+   token: string;
+   ownerPath: string;
+@@ -539,7 +541,8 @@ function readLockOwner(lockDirectory: string): LockOwner | null {
+     throw new Error('Canvas data directory has an invalid lock owner');
+   }
+   try {
+-    assertExactKeys(value, ['pid', 'token'], 'Canvas data directory lock owner');
++    assertExactKeys(value, Object.hasOwn(value,'lease')?['pid','token','lease']:['pid','token'], 'Canvas data directory lock owner');
++    if(Object.hasOwn(value,'lease')&&(typeof value.lease!=='string'||!/^\d+:\d+$/.test(value.lease)))throw new Error('Invalid kernel lease owner');
+   } catch {
+     throw new Error('Canvas data directory has an invalid lock owner');
+   }
+@@ -549,6 +552,7 @@ function readLockOwner(lockDirectory: string): LockOwner | null {
+   }
+ 
+   return {
++    ...(typeof value.lease==='string'?{lease:value.lease}:{}),
+     pid: value.pid as number,
+     token: value.token,
+     ownerPath,
+@@ -576,6 +580,7 @@ export function acquireDurableStateLock(): void {
+     throw new Error('Canvas data directory lock was already acquired in this process');
+   }
+ 
++  const lease=heldIsolatedLease();
+   ensurePrivateDirectory(dataDirectory);
+   const lockDirectory = join(dataDirectory, LOCK_FILE_NAME);
+   const token = randomUUID();
+@@ -594,7 +599,7 @@ export function acquireDurableStateLock(): void {
+       createdDirectory = true;
+ 
+       descriptor = openSync(ownerPath, 'wx', 0o600);
+-      writeFileSync(descriptor, stableStringify({ pid: process.pid, token }), 'utf8');
++      writeFileSync(descriptor, stableStringify({ pid: process.pid, token, ...(lease?{lease}:{}) }), 'utf8');
+       fsyncSync(descriptor);
+       closeSync(descriptor);
+       descriptor = null;
+@@ -622,8 +627,11 @@ export function acquireDurableStateLock(): void {
+         removeEmptyLockDirectory(lockDirectory);
+         continue;
+       }
+-      if (processIsRunning(owner.pid)) {
+-        throw new Error(`Canvas data directory is already owned by process ${owner.pid}`);
++      if(lease){
++        if(owner.lease!==lease)throw new Error('Refusing to reclaim an unmanaged or different kernel lease owner');
++      }else{
++        if(owner.lease)throw new Error('Isolated canvas requires its kernel lease launcher');
++        if(processIsRunning(owner.pid))throw new Error(`Canvas data directory is already owned by process ${owner.pid}`);
+       }
+ 
+       // Delete exactly the stale token-specific owner observed above. If a
+diff --git a/src/core/isolated-lease.ts b/src/core/isolated-lease.ts
+new file mode 100755
+index 0000000..d1c7e0e
+--- /dev/null
++++ b/src/core/isolated-lease.ts
+@@ -0,0 +1,19 @@
++import {lstatSync,readFileSync} from 'node:fs';
++
++// The launcher must exec Node under flock --no-fork. Verify the kernel lease
++// in this PID namespace before trusting any stale durable owner metadata.
++export function heldIsolatedLease(): string | undefined {
++  const file=process.env.EXCALIDRAW_ISOLATED_LEASE;
++  if(file===undefined)return undefined;
++  if(process.platform!=='linux'||file!=='/lease/editor.lock')throw new Error('Unsupported isolated lease');
++  const stat=lstatSync(file,{bigint:true});
++  if(!stat.isFile()||stat.nlink!==1n)throw new Error('Invalid isolated lease inode');
++  const major=((stat.dev>>8n)&0xfffn)|((stat.dev>>32n)&0xfffff000n);
++  const minor=(stat.dev&0xffn)|((stat.dev>>12n)&0xffffff00n);
++  const held=readFileSync('/proc/locks','utf8').split('\n').some(line=>{
++    const match=/^\d+:\s+FLOCK\s+ADVISORY\s+WRITE\s+(\d+)\s+([a-f0-9]+):([a-f0-9]+):(\d+)\s+0\s+EOF$/i.exec(line);
++    return match&&Number(match[1])===process.pid&&BigInt('0x'+match[2])===major&&BigInt('0x'+match[3])===minor&&BigInt(match[4]!)===stat.ino;
++  });
++  if(!held)throw new Error('Editor must hold its exclusive kernel lease');
++  return `${stat.dev}:${stat.ino}`;
++}
+diff --git a/src/core/unix-listener.ts b/src/core/unix-listener.ts
+new file mode 100755
+index 0000000..bcd3b65
+--- /dev/null
++++ b/src/core/unix-listener.ts
+@@ -0,0 +1,25 @@
++import fs from 'node:fs';
++import net from 'node:net';
++import path from 'node:path';
++export function unixSocketPath(): string | undefined {
++  const value=process.env.EXCALIDRAW_SOCKET_PATH;
++  if(value===undefined)return undefined;
++  if(process.platform!=='linux'||!path.isAbsolute(value)||Buffer.byteLength(value)>100||path.normalize(value)!==value)throw new Error('Invalid Unix listener path');
++  return value;
++}
++export async function prepareUnixSocket(file: string): Promise<void> {
++  let before: fs.Stats;
++  try{before=fs.lstatSync(file);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
++  if(!before.isSocket()||before.isSymbolicLink())throw new Error('Refusing to replace a non-socket listener path');
++  await new Promise<void>((resolve,reject)=>{
++    const socket=net.createConnection({path:file});
++    socket.setTimeout(1000);
++    socket.once('connect',()=>{socket.destroy();reject(new Error('Unix listener is already active'));});
++    socket.once('timeout',()=>{socket.destroy();reject(new Error('Unix listener state is ambiguous'));});
++    socket.once('error',(error: NodeJS.ErrnoException)=>{if(['ECONNREFUSED','ENOENT'].includes(error.code||''))resolve();else reject(error);});
++  });
++  let current: fs.Stats;
++  try{current=fs.lstatSync(file);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw e;}
++  if(current.dev!==before.dev||current.ino!==before.ino||!current.isSocket())throw new Error('Unix listener changed during recovery');
++  fs.unlinkSync(file);
++}
+diff --git a/src/server.ts b/src/server.ts
+index 2b34994..3725fa6 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
+ import { createServer } from 'http';
+ import net from 'net';
+ import path from 'path';
++import {unixSocketPath,prepareUnixSocket} from './core/unix-listener.js';
+ import { fileURLToPath } from 'url';
+ import dotenv from 'dotenv';
+ import logger from './utils/logger.js';
+@@ -64,7 +65,8 @@ const wss = new WebSocketServer({ server });
+ app.use(cors());
+ app.use(express.json({ limit: '10mb' }));
+ app.get('/api/board-config', (_req, res) => res.json({
+-  id: process.env.BOARD_ID || 'project', name: process.env.BOARD_TITLE || 'Проект', role: 'owner', sections: []
++  id: process.env.BOARD_ID || 'project', name: process.env.BOARD_TITLE || 'Проект', role: 'owner', sections: [],
++  ...(process.env.EXCALIDRAW_WORKER_GENERATION?{generation:process.env.EXCALIDRAW_WORKER_GENERATION}:{})
+ }));
+ 
+ // Serve static files from the build directory
+@@ -1547,6 +1549,9 @@ server.on('error', (error: NodeJS.ErrnoException) => {
+ });
+ 
+ async function startServer(): Promise<void> {
++  const socketPath=unixSocketPath();
++  if(process.env.EXCALIDRAW_ISOLATED_LEASE&&!socketPath)throw new Error('Isolated editor requires a Unix socket');
++  if(socketPath)process.umask(0o077);
+   acquireDurableStateLock();
+   let durableState: ReturnType<typeof loadDurableState>;
+   try {
+@@ -1566,7 +1571,7 @@ async function startServer(): Promise<void> {
+     logger.info('Durable canvas state enabled; starting without an existing checkpoint');
+   }
+ 
+-  if (LOOPBACK_GUARD_HOSTS.has(HOST)) {
++  if (!socketPath && LOOPBACK_GUARD_HOSTS.has(HOST)) {
+     const existingHost = await findExistingLoopbackListener(PORT);
+     if (existingHost) {
+       logger.error(
+@@ -1583,16 +1588,17 @@ async function startServer(): Promise<void> {
+   // The data-directory lock independently protects durable-state ownership.
+   let ownsPidFile = false;
+ 
+-  server.listen(PORT, HOST, () => {
++  if(socketPath)await prepareUnixSocket(socketPath);
++  const onListening=(): void => {
+     const hostForUrl = formatHostForUrl(HOST);
+     logger.info(`POC server running on http://${hostForUrl}:${PORT}`);
+     logger.info(`WebSocket server running on ws://${hostForUrl}:${PORT}`);
+ 
+     // Written only after listen succeeds so stale files can't shadow a
+     // server that never came up; lets `excalidraw-canvas stop` find us.
+-    writePidFile(PORT, process.pid);
+-    ownsPidFile = true;
+-  });
++    if(!socketPath){writePidFile(PORT, process.pid);ownsPidFile=true;}
++  };
++  if(socketPath)server.listen(socketPath,onListening);else server.listen(PORT,HOST,onListening);
+ 
+   const shutdown = (signal: NodeJS.Signals): void => {
+     logger.info(`Received ${signal}, shutting down canvas server`);
+@@ -1612,6 +1618,10 @@ async function startServer(): Promise<void> {
+   });
+   process.on('SIGTERM', () => shutdown('SIGTERM'));
+   process.on('SIGINT', () => shutdown('SIGINT'));
++  if(socketPath&&process.env.EXCALIDRAW_SHUTDOWN_STDIN==='1'){
++    let control='';process.stdin.setEncoding('utf8');
++    process.stdin.on('data',(chunk: string)=>{control=(control+chunk).slice(-64);if(control.includes('shutdown\n'))shutdown('SIGTERM');});
++  }
+   process.on('exit', () => {
+     if (ownsPidFile) removePidFile(PORT);
+     releaseDurableStateLockSafely();

@@ -1,0 +1,7 @@
+table inet excalidraw_admin_guard {
+  chain output {
+    type filter hook output priority -10; policy accept;
+    meta skuid 993 ip daddr 127.0.0.1 tcp dport 2019 counter reject with tcp reset
+    meta skuid 993 ip6 daddr ::1 tcp dport 2019 counter reject with tcp reset
+  }
+}

@@ -20,7 +20,7 @@ const day=86400000;
 const releaseStore=lockStore(stateFile);process.on('exit',releaseStore);
 const initial=JSON.parse(fs.readFileSync(config.boardsConfig,'utf8'));
 const access=new Access(stateFile,initial),state=access.state;
-const workers=new Workers(appRoot,config.personalDataRoot,{maxWorkers:config.maxWorkers,idleMs:config.idleMs});
+const workers=new Workers(appRoot,config.personalDataRoot,{maxWorkers:config.maxWorkers,idleMs:config.idleMs,isolation:config.workerIsolation});
 const mcp=new RemoteMcp({appRoot,access,workers,port});mcp.origin=origin;
 const sockets=new Set(),attempts=new Map();
 const app=express();app.disable('x-powered-by');
@@ -115,9 +115,9 @@ app.post('/api/invitations/redeem',body,(req,res)=>{
 });
 async function proxy(req,res,board,target,session=req.session){
   const reading=['GET','HEAD'].includes(req.method)||req.method==='POST'&&target.split('?')[0]==='/api/export/image';
-  const {port:workerPort,release}=await acquireAuthorizedWorker({workers,access,session,board,write:!reading});
+  const {port:workerPort,socketPath,release}=await acquireAuthorizedWorker({workers,access,session,board,write:!reading});
   const headers={...req.headers,host:'127.0.0.1'};for(const h of ['cookie','authorization','connection'])delete headers[h];
-  const upstream=http.request({hostname:'127.0.0.1',port:workerPort,method:req.method,path:target,headers},response=>{
+  const upstream=http.request({...(socketPath?{socketPath}:{hostname:'127.0.0.1',port:workerPort}),method:req.method,path:target,headers},response=>{
     const copied={...response.headers,'cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'};for(const h of ['set-cookie','access-control-allow-origin'])delete copied[h];
     res.writeHead(response.statusCode,copied);response.pipe(res);
   });
@@ -159,9 +159,9 @@ server.on('upgrade',async(req,socket,head)=>{
   const match=/^\/b\/([a-z0-9-]+)\/ws$/.exec(req.url),board=match&&access.board(match[1]),session=sessionOf(req);
   if(!board||!access.permission(session,board)||req.headers.origin!==origin){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
   try{
-    const {port:workerPort,release}=await workers.acquire(board);if(!access.permission(session,board)){release();throw fail(403,'Доступ закрыт');}
+    const {port:workerPort,socketPath,release}=await workers.acquire(board);if(!access.permission(session,board)){release();throw fail(403,'Доступ закрыт');}
     wss.handleUpgrade(req,socket,head,client=>{
-      const upstream=new WebSocket(`ws://127.0.0.1:${workerPort}/`),connection={client,upstream,session,board,role:access.permission(session,board)};sockets.add(connection);
+      const upstream=new WebSocket(socketPath?`ws+unix://${socketPath}:/`:`ws://127.0.0.1:${workerPort}/`),connection={client,upstream,session,board,role:access.permission(session,board)};sockets.add(connection);
       const stop=()=>{sockets.delete(connection);release();upstream.terminate();};
       upstream.on('message',(message,binary)=>{if(!access.permission(session,board))return client.close(1008,'Access expired');if(client.readyState===WebSocket.OPEN)client.send(message,{binary});});
       client.on('message',(message,binary)=>{const role=access.permission(session,board);if(!role)return client.close(1008,'Access expired');if(role!=='view'&&upstream.readyState===WebSocket.OPEN)upstream.send(message,{binary});});

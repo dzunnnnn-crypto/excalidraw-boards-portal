@@ -16,7 +16,11 @@ export function backupOffline({dataDir,outDir}){
    continue;
   }
   if(ent.name==='canvas-state.lock'){
-   for(const name of fs.readdirSync(file)){const owner=JSON.parse(fs.readFileSync(path.join(file,name)));if(alive(owner.pid))throw new Error('Canvas is active; stop it before backup');}
+   for(const name of fs.readdirSync(file)){const owner=JSON.parse(fs.readFileSync(path.join(file,name)));
+    // Namespace PIDs cannot be tested for liveness from the host. A remaining
+    // isolated owner is always unsafe for an offline copy, even after a crash.
+    if(Object.hasOwn(owner,'lease'))throw new Error('Isolated canvas owner remains; stop or recover the editor before backup');
+    if(alive(owner.pid))throw new Error('Canvas is active; stop it before backup');}
   }else if(ent.isDirectory())inspect(file);
  }}inspect(source);
  fs.cpSync(source,target,{recursive:true,errorOnExist:true,force:false,filter:p=>!['.portal.lock','canvas-state.lock'].includes(path.basename(p))});

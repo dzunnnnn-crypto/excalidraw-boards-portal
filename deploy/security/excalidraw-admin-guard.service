@@ -1,0 +1,31 @@
+[Unit]
+Description=Restrict board processes from the local Caddy administration API
+Before=excalidraw-portal.service excalidraw.service excalidraw-svoya-zemlya.service excalidraw-path-dz.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+RuntimeDirectory=excalidraw-admin-guard
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/python3 /usr/local/libexec/excalidraw-caddy-admin-guard.py start
+ExecStop=/usr/bin/python3 /usr/local/libexec/excalidraw-caddy-admin-guard.py stop
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+ReadWritePaths=/run/excalidraw-admin-guard
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0077
+TimeoutStartSec=45
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

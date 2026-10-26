@@ -1,3 +1,4 @@
+import {IsolatedWorkers} from './isolated/workers.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -8,7 +9,7 @@ import { fail } from './access.mjs';
 // Established boards keep their services and data paths. Personal boards start
 // only while in use. Never start two writers for the same durable directory.
 export class Workers {
-  constructor(appRoot,dataRoot,{maxWorkers=2,idleMs=120000}={}){this.maxWorkers=maxWorkers;this.idleMs=idleMs;this.appRoot=appRoot;this.dataRoot=dataRoot;this.running=new Map();this.tail=Promise.resolve();this.timer=setInterval(()=>this.reap(),30000);this.timer.unref();}
+  constructor(appRoot,dataRoot,{maxWorkers=2,idleMs=120000,isolation}={}){if(isolation?.mode==='bubblewrap')return new IsolatedWorkers(appRoot,dataRoot,{maxWorkers,idleMs,fixedDirectories:isolation.fixedDirectories});this.maxWorkers=maxWorkers;this.idleMs=idleMs;this.appRoot=appRoot;this.dataRoot=dataRoot;this.running=new Map();this.tail=Promise.resolve();this.timer=setInterval(()=>this.reap(),30000);this.timer.unref();}
   async get(board){
     if(this.closing)throw fail(503,'Workers are closing');
     if(board.port)return board.port;

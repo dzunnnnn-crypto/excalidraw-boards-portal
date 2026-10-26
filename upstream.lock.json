@@ -25,6 +25,10 @@
     {
       "file": "patches/006-zod-validation.patch",
       "sha256": "1df3625739dcc5ba24988d0b92443bd945be387b2cb8ce3e1ee3f63d4496b688"
+    },
+    {
+      "file": "patches/007-isolated-editor.patch",
+      "sha256": "ea44dee729d0157481629d72ae0e6db6371fc165243684eee6a6d1063a346a7a"
     }
   ]
 }

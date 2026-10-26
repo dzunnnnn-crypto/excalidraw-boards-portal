@@ -1,0 +1,19 @@
+{
+  "origin": "https://boards.example",
+  "host": "127.0.0.1",
+  "port": 8805,
+  "dataRoot": "/var/lib/boards-portal",
+  "authStateFile": "/var/lib/boards-portal/portal/auth.json",
+  "personalDataRoot": "/var/lib/boards-portal/personal",
+  "boardsConfig": "/etc/boards-portal/boards.json",
+  "appRoot": "/srv/boards-portal/releases/RELEASE_ID/.vendor/upstream",
+  "maxWorkers": 4,
+  "idleMs": 120000,
+  "workerIsolation": {
+    "mode": "bubblewrap",
+    "fixedDirectories": {
+      "main": "/var/lib/boards-portal/fixed/main",
+      "project": "/var/lib/boards-portal/fixed/project"
+    }
+  }
+}
